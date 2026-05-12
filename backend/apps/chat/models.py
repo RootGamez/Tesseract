@@ -18,7 +18,7 @@ class ChatMessage(BaseModel):
     """
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="chat_messages",
     )

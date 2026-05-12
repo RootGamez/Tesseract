@@ -31,7 +31,7 @@ class LeaderboardView(APIView):
     permission_classes = [IsParticipantOrInstructor]
 
     def get(self, request, session_id):
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         participants = Participant.objects.filter(
             session_id=session_id, points__gt=0
         ).order_by("-points")

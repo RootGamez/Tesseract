@@ -31,7 +31,7 @@ class BoardCollaboratorManageView(APIView):
     permission_classes = [IsInstructor]
 
     def post(self, request, session_id):
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         participant_id = request.data.get("participant_id")
         grant = request.data.get("grant", True)
 

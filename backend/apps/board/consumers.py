@@ -141,7 +141,7 @@ class BoardConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _check_draw_permission(self) -> bool:
-        from apps.sessions.models import LiveSession, Participant
+        from apps.live_sessions.models import LiveSession, Participant
         try:
             session = LiveSession.objects.get(pk=self.session_id)
             if session.instructor == self.user:
@@ -173,7 +173,7 @@ class BoardConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _get_latest_snapshot(self):
         from apps.board.models import BoardSnapshot
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         try:
             session = LiveSession.objects.select_related("current_stage").get(pk=self.session_id)
             if session.current_stage:

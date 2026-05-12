@@ -11,7 +11,7 @@ def aggregate_session_analytics(session_id: str):
     Aggregate all session data into StageMetric and SessionSummaryMetric.
     RF-ANA-02: Called after session ends.
     """
-    from apps.sessions.models import LiveSession, Participant
+    from apps.live_sessions.models import LiveSession, Participant
     from apps.analytics.models import StageMetric, SessionSummaryMetric
     from apps.gamification.models import QuizQuestion, QuizResponse, PointEvent
     from apps.chat.models import ChatMessage

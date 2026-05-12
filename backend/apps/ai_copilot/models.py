@@ -19,7 +19,7 @@ class AIGenerationLog(BaseModel):
         LIVE_HINT = "LIVE_HINT", "Sugerencia en vivo"
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="ai_logs",
     )

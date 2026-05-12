@@ -182,7 +182,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _silence_participant(self, participant_id: str) -> bool:
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         try:
             p = Participant.objects.get(pk=participant_id, session_id=self.session_id)
             p.is_chat_muted = not p.is_chat_muted
@@ -193,7 +193,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _check_muted(self) -> bool:
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         try:
             p = Participant.objects.get(session_id=self.session_id, user=self.user)
             return p.is_chat_muted
@@ -202,12 +202,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _is_instructor(self) -> bool:
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         return LiveSession.objects.filter(pk=self.session_id, instructor=self.user).exists()
 
     @database_sync_to_async
     def _is_solo_instructor_mode(self) -> bool:
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         try:
             session = LiveSession.objects.get(pk=self.session_id)
             return session.template and session.template.stages.filter(

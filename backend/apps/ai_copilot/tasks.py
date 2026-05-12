@@ -91,7 +91,7 @@ def generate_session_summary(self, session_id: str):
     RF-AI-02: Generate structured Markdown summary post-session.
     Stores in LiveSession.ai_summary and optionally emails instructor.
     """
-    from apps.sessions.models import LiveSession
+    from apps.live_sessions.models import LiveSession
     from apps.chat.models import ChatMessage
     from apps.resources.models import Snippet
     from apps.gamification.models import QuizQuestion
@@ -164,7 +164,7 @@ def analyze_session_for_hints(session_id: str):
     RF-AI-03: Analyze passive session signals and send live hints to instructor.
     Scheduled periodically during LIVE sessions.
     """
-    from apps.sessions.models import LiveSession
+    from apps.live_sessions.models import LiveSession
     from apps.ai_copilot.models import AIGenerationLog
     from channels.layers import get_channel_layer
     from asgiref.sync import async_to_sync

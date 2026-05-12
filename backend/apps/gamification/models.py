@@ -29,12 +29,12 @@ class QuizQuestion(BaseModel):
         HARD = "HARD", "Difícil"
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="quiz_questions",
     )
     stage = models.ForeignKey(
-        "sessions.Stage",
+        "live_sessions.Stage",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -80,7 +80,7 @@ class QuizResponse(BaseModel):
         related_name="responses",
     )
     participant = models.ForeignKey(
-        "sessions.Participant",
+        "live_sessions.Participant",
         on_delete=models.CASCADE,
         related_name="quiz_responses",
     )
@@ -105,12 +105,12 @@ class PointEvent(BaseModel):
     """
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="point_events",
     )
     participant = models.ForeignKey(
-        "sessions.Participant",
+        "live_sessions.Participant",
         on_delete=models.CASCADE,
         related_name="point_events",
     )
@@ -144,7 +144,7 @@ class Timer(BaseModel):
         FINISHED = "FINISHED", "Finalizado"
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="timers",
     )

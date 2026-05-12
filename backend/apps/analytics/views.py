@@ -28,7 +28,7 @@ class SessionAnalyticsDashboardView(APIView):
     permission_classes = [IsInstructor]
 
     def get(self, request, session_id):
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         session = generics.get_object_or_404(
             LiveSession, pk=session_id, instructor=request.user
         )
@@ -68,7 +68,7 @@ class SessionAnalyticsCSVExportView(APIView):
     permission_classes = [IsInstructor]
 
     def get(self, request, session_id):
-        from apps.sessions.models import LiveSession, Participant
+        from apps.live_sessions.models import LiveSession, Participant
         session = generics.get_object_or_404(
             LiveSession, pk=session_id, instructor=request.user
         )
@@ -105,7 +105,7 @@ class SessionReplayView(APIView):
         return [permissions.IsAuthenticated()]
 
     def get(self, request, session_id):
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         from apps.board.models import BoardSnapshot
         from apps.resources.models import Resource, Snippet
         from apps.resources.storage import get_or_refresh_presigned_url
@@ -168,7 +168,7 @@ class InstructorSessionHistoryView(generics.ListAPIView):
     permission_classes = [IsInstructor]
 
     def get(self, request, *args, **kwargs):
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         from django.db.models import Count, Avg
 
         sessions = LiveSession.objects.filter(

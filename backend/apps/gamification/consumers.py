@@ -277,7 +277,7 @@ class GamificationConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _is_instructor(self) -> bool:
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         try:
             return LiveSession.objects.filter(pk=self.session_id, instructor=self.user).exists()
         except Exception:
@@ -285,7 +285,7 @@ class GamificationConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _award_points(self, participant_id: str, points: int, label: str):
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         from apps.gamification.models import PointEvent
         try:
             participant = Participant.objects.get(pk=participant_id, session_id=self.session_id)
@@ -304,7 +304,7 @@ class GamificationConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _pick_random_participant(self, excluded_ids: list):
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         qs = Participant.objects.filter(
             session_id=self.session_id,
             connection_status="ONLINE",
@@ -352,7 +352,7 @@ class GamificationConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _save_quiz_response(self, question_id: str, answer: str):
         from apps.gamification.models import QuizQuestion, QuizResponse
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         try:
             question = QuizQuestion.objects.get(pk=question_id)
             participant = Participant.objects.get(session_id=self.session_id, user=self.user)

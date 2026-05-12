@@ -17,12 +17,12 @@ class BoardSnapshot(BaseModel):
     """
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="board_snapshots",
     )
     stage = models.ForeignKey(
-        "sessions.Stage",
+        "live_sessions.Stage",
         on_delete=models.SET_NULL,
         null=True,
         related_name="board_snapshots",
@@ -51,12 +51,12 @@ class BoardCollaborator(BaseModel):
     """
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="board_collaborators",
     )
     participant = models.ForeignKey(
-        "sessions.Participant",
+        "live_sessions.Participant",
         on_delete=models.CASCADE,
         related_name="board_permissions",
     )

@@ -15,12 +15,12 @@ class StageMetric(BaseModel):
     """
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="stage_metrics",
     )
     stage = models.ForeignKey(
-        "sessions.Stage",
+        "live_sessions.Stage",
         on_delete=models.SET_NULL,
         null=True,
         related_name="metrics",
@@ -48,7 +48,7 @@ class SessionSummaryMetric(BaseModel):
     """
 
     session = models.OneToOneField(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="summary_metric",
     )

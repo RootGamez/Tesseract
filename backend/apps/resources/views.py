@@ -43,7 +43,7 @@ class ResourceUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        from apps.sessions.models import LiveSession, Stage
+        from apps.live_sessions.models import LiveSession, Stage
         try:
             session = LiveSession.objects.get(pk=session_id, instructor=request.user)
         except LiveSession.DoesNotExist:

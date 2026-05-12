@@ -23,12 +23,12 @@ class Resource(BaseModel):
         OTHER = "OTHER", "Otro"
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="resources",
     )
     stage = models.ForeignKey(
-        "sessions.Stage",
+        "live_sessions.Stage",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -90,12 +90,12 @@ class Snippet(BaseModel):
         OTHER = "other", "Otro"
 
     session = models.ForeignKey(
-        "sessions.LiveSession",
+        "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="snippets",
     )
     stage = models.ForeignKey(
-        "sessions.Stage",
+        "live_sessions.Stage",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
