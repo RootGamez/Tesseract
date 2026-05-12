@@ -1,5 +1,5 @@
 """
-ASGI config — Plataforma de Acompañamiento Interactivo
+ASGI config — Tesseract Platform
 Soporta HTTP (Django) y WebSocket (Django Channels) via Daphne.
 """
 import os

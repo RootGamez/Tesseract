@@ -18,7 +18,7 @@ def send_password_reset_email(self, user_id: str, token: str):
         user = User.objects.get(pk=user_id)
         reset_url = f"{settings.FRONTEND_URL}/auth/password-reset/confirm?token={token}"
         send_mail(
-            subject="Restablecer tu contraseña — Plataforma Acompañamiento",
+            subject="Restablecer tu contraseña — Tesseract",
             message=f"Haz clic en el siguiente enlace para restablecer tu contraseña:\n{reset_url}\n\nEste enlace expira en 1 hora.",
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
@@ -40,7 +40,7 @@ def send_invitation_email(self, invitation_id: str):
         invitation = Invitation.objects.select_related("organization", "invited_by").get(pk=invitation_id)
         accept_url = f"{settings.FRONTEND_URL}/auth/invitations/accept?token={invitation.token}"
         send_mail(
-            subject=f"Invitación a {invitation.organization.name} — Plataforma Acompañamiento",
+            subject=f"Invitación a {invitation.organization.name} — Tesseract",
             message=(
                 f"Hola,\n\n"
                 f"{invitation.invited_by.display_name} te ha invitado a unirte a {invitation.organization.name} "

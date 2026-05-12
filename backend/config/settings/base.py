@@ -1,6 +1,6 @@
 """
 Django settings — BASE
-Plataforma de Acompañamiento Interactivo en Tiempo Real
+Tesseract — Real-Time Interactive Platform
 """
 from pathlib import Path
 from decouple import config, Csv
@@ -105,9 +105,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="acompanamiento_db"),
-        "USER": config("DB_USER", default="acompanamiento"),
-        "PASSWORD": config("DB_PASSWORD", default="acompanamiento"),
+        "NAME": config("DB_NAME", default="tesseract_db"),
+        "USER": config("DB_USER", default="tesseract"),
+        "PASSWORD": config("DB_PASSWORD", default="tesseract"),
         "HOST": config("DB_HOST", default="localhost"),
         "PORT": config("DB_PORT", default="5432"),
         "CONN_MAX_AGE": 60,
@@ -232,7 +232,7 @@ else:
     # Dev/Staging — MinIO
     AWS_ACCESS_KEY_ID = config("MINIO_ACCESS_KEY", default="minioadmin")
     AWS_SECRET_ACCESS_KEY = config("MINIO_SECRET_KEY", default="minioadmin")
-    AWS_STORAGE_BUCKET_NAME = config("MINIO_BUCKET_NAME", default="acompanamiento")
+    AWS_STORAGE_BUCKET_NAME = config("MINIO_BUCKET_NAME", default="tesseract")
     AWS_S3_ENDPOINT_URL = f"http{'s' if config('MINIO_USE_SSL', default=False, cast=bool) else ''}://{config('MINIO_ENDPOINT', default='localhost:9000')}"
     AWS_S3_FILE_OVERWRITE = False
     AWS_DEFAULT_ACL = None
@@ -246,7 +246,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@acompanamiento.local")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@tesseract.local")
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
 
 # ── OpenAI / Ollama ───────────────────────────────────────────────────────────
@@ -260,8 +260,8 @@ SENTRY_DSN = config("SENTRY_DSN", default="")
 
 # ── API Documentation ─────────────────────────────────────────────────────────
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Plataforma de Acompañamiento Interactivo API",
-    "DESCRIPTION": "API REST + WebSocket para la Plataforma de Acompañamiento en Tiempo Real",
+    "TITLE": "Tesseract API",
+    "DESCRIPTION": "API REST + WebSocket para la Plataforma Tesseract en Tiempo Real",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",

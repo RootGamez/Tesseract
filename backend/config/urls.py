@@ -1,5 +1,5 @@
 """
-URL configuration — Plataforma de Acompañamiento Interactivo
+URL configuration — Tesseract Platform
 """
 from django.contrib import admin
 from django.urls import path, include

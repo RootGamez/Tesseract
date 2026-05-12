@@ -1,5 +1,5 @@
 """
-WebSocket event type constants — Plataforma de Acompañamiento Interactivo
+WebSocket event type constants — Tesseract Platform
 Ref: Documento de Requerimientos §6.3
 """
 

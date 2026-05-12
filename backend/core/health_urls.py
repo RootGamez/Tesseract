@@ -12,7 +12,7 @@ from django.conf import settings
 
 def health_check(request):
     """Basic liveness check — always returns 200 if process is running."""
-    return JsonResponse({"status": "ok", "service": "acompanamiento-backend"})
+    return JsonResponse({"status": "ok", "service": "tesseract-backend"})
 
 
 def readiness_check(request):
