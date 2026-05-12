@@ -10,9 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements/base.txt requirements/base.txt
-COPY requirements/prod.txt requirements/prod.txt
-RUN pip install -r requirements/prod.txt
+ARG ENVIRONMENT=dev
+COPY requirements/ ./requirements/
+RUN pip install -r requirements/${ENVIRONMENT}.txt
 
 COPY . .
 

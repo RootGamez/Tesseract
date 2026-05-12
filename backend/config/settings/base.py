@@ -16,6 +16,7 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost", cast=Csv())
 
 # ── Applications ──────────────────────────────────────────────────────────────
 DJANGO_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -40,7 +41,6 @@ THIRD_PARTY_APPS = [
     "allauth.socialaccount.providers.google",
     # Channels (WebSocket)
     "channels",
-    "daphne",
     # Celery
     "django_celery_beat",
     "django_celery_results",
@@ -50,7 +50,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "apps.authentication",
-    "apps.sessions",
+    "apps.live_sessions",
     "apps.board",
     "apps.gamification",
     "apps.chat",
@@ -105,10 +105,10 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="tesseract_db"),
+        "NAME": config("DB_NAME", default="tesseract"),
         "USER": config("DB_USER", default="tesseract"),
         "PASSWORD": config("DB_PASSWORD", default="tesseract"),
-        "HOST": config("DB_HOST", default="localhost"),
+        "HOST": config("DB_HOST", default="db"),
         "PORT": config("DB_PORT", default="5432"),
         "CONN_MAX_AGE": 60,
         "OPTIONS": {
@@ -189,7 +189,7 @@ SIMPLE_JWT = {
 }
 
 # ── Django Channels / Redis ───────────────────────────────────────────────────
-REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
 
 CHANNEL_LAYERS = {
     "default": {
@@ -203,8 +203,8 @@ CHANNEL_LAYERS = {
 }
 
 # ── Celery ────────────────────────────────────────────────────────────────────
-CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/1")
-CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default="redis://localhost:6379/2")
+CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://redis:6379/1")
+CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default="redis://redis:6379/2")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -233,7 +233,7 @@ else:
     AWS_ACCESS_KEY_ID = config("MINIO_ACCESS_KEY", default="minioadmin")
     AWS_SECRET_ACCESS_KEY = config("MINIO_SECRET_KEY", default="minioadmin")
     AWS_STORAGE_BUCKET_NAME = config("MINIO_BUCKET_NAME", default="tesseract")
-    AWS_S3_ENDPOINT_URL = f"http{'s' if config('MINIO_USE_SSL', default=False, cast=bool) else ''}://{config('MINIO_ENDPOINT', default='localhost:9000')}"
+    AWS_S3_ENDPOINT_URL = f"http{'s' if config('MINIO_USE_SSL', default=False, cast=bool) else ''}://{config('MINIO_ENDPOINT', default='minio:9000')}"
     AWS_S3_FILE_OVERWRITE = False
     AWS_DEFAULT_ACL = None
     DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"

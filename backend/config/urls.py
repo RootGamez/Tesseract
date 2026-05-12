@@ -13,7 +13,7 @@ from drf_spectacular.views import (
 
 api_v1_patterns = [
     path("auth/", include("apps.authentication.urls")),
-    path("sessions/", include("apps.sessions.urls")),
+    path("sessions/", include("apps.live_sessions.urls")),
     path("board/", include("apps.board.urls")),
     path("gamification/", include("apps.gamification.urls")),
     path("chat/", include("apps.chat.urls")),
