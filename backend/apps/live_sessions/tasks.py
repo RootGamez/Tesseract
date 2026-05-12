@@ -38,7 +38,7 @@ def cleanup_dry_run_session(session_id: str):
     Participants, board snapshots, and resources created during dry-run
     are purged without affecting permanent storage quota.
     """
-    from apps.sessions.models import LiveSession
+    from apps.live_sessions.models import LiveSession
     from apps.board.models import BoardSnapshot
     from apps.resources.models import Resource
 
@@ -58,7 +58,7 @@ def cleanup_dry_run_session(session_id: str):
 @shared_task
 def expire_join_code(session_id: str):
     """Invalidate join code when a session ends (RF-AUTH-02)."""
-    from apps.sessions.models import LiveSession
+    from apps.live_sessions.models import LiveSession
     import random
     import string
     try:

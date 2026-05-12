@@ -141,7 +141,7 @@ class SessionConsumer(AsyncWebsocketConsumer):
 
     async def send_session_state(self, session):
         """Send complete current session state on connect (resync)."""
-        from apps.sessions.serializers import LiveSessionSerializer
+        from apps.live_sessions.serializers import LiveSessionSerializer
         from asgiref.sync import sync_to_async
         data = await sync_to_async(
             lambda: LiveSessionSerializer(session).data
@@ -153,7 +153,7 @@ class SessionConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _get_session(self):
-        from apps.sessions.models import LiveSession
+        from apps.live_sessions.models import LiveSession
         try:
             return LiveSession.objects.select_related("instructor", "current_stage").get(
                 pk=self.session_id
@@ -163,7 +163,7 @@ class SessionConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _get_or_create_participant(self, session):
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         participant, _ = Participant.objects.get_or_create(
             session=session,
             user=self.user,
@@ -176,7 +176,7 @@ class SessionConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _set_connection_status(self, status: str):
-        from apps.sessions.models import Participant
+        from apps.live_sessions.models import Participant
         if self.participant:
             update_fields = {"connection_status": status}
             if status == "ONLINE":

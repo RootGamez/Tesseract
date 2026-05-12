@@ -72,7 +72,7 @@ class SessionStateMachine:
         """LIVE|PAUSED → ENDED — triggers async post-class tasks."""
         session = self._transition("ENDED", ended_at=timezone.now())
         # Enqueue async post-class tasks (RF-AI-02, RF-ANA-02)
-        from apps.sessions.tasks import handle_session_ended
+        from apps.live_sessions.tasks import handle_session_ended
         handle_session_ended.delay(str(session.pk))
         return session
 
