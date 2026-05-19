@@ -22,6 +22,7 @@
 
     /* Path aliases for Shadcn UI */
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/*"]
     }
