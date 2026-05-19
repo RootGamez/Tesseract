@@ -38,6 +38,21 @@ export const sessionsService = {
     const { data } = await apiClient.post<LiveSession>(`/api/v1/sessions/live/${id}/transition/`, { action: 'end' });
     return data;
   },
+  async pause(id: string): Promise<LiveSession> {
+    const { data } = await apiClient.post<LiveSession>(`/api/v1/sessions/live/${id}/transition/`, { action: 'pause' });
+    return data;
+  },
+  async resume(id: string): Promise<LiveSession> {
+    const { data } = await apiClient.post<LiveSession>(`/api/v1/sessions/live/${id}/transition/`, { action: 'resume' });
+    return data;
+  },
+  async changeStage(sessionId: string, stageId: string, boardSnapshot?: any): Promise<any> {
+    const { data } = await apiClient.post(`/api/v1/sessions/live/${sessionId}/change-stage/`, {
+      stage_id: stageId,
+      board_snapshot: boardSnapshot,
+    });
+    return data;
+  },
   async joinByCode(code: string): Promise<LiveSession> {
     const { data } = await apiClient.post<{ session: LiveSession }>('/api/v1/sessions/join/', { code });
     return data.session;

@@ -90,7 +90,20 @@ export default function SessionsListPage() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}
                     className="grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-4 items-center hover:bg-muted/40 cursor-pointer transition-colors"
-                    onClick={() => s.state === 'LIVE' ? navigate(`/session/${s.id}/instructor`) : navigate(`/session/${s.id}/replay`)}
+                    onClick={async () => {
+                      if (s.state === 'ENDED') {
+                        navigate(`/session/${s.id}/replay`);
+                      } else {
+                        if (s.state === 'SCHEDULED') {
+                          try {
+                            await sessionsService.start(s.id);
+                          } catch (err) {
+                            console.error('Failed to start session:', err);
+                          }
+                        }
+                        navigate(`/session/${s.id}/instructor`);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-8 h-8 rounded-lg card-gradient-blue flex items-center justify-center shrink-0">

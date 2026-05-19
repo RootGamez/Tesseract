@@ -14,7 +14,9 @@ import { Input } from '@/shared/components/ui/input';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import { useOrchestratorStore } from '../store/orchestratorStore';
 import { useWebSocket } from '@/shared/hooks/useWebSocket';
+import { sessionsService } from '@/shared/services/sessionsService';
 import { cn } from '@/shared/lib/utils';
+import BoardWrapper from '@/features/board/components/BoardWrapper';
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
@@ -27,7 +29,7 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
 export default function InstructorSessionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { stages, activeStageId, participants, sessionInfo, setActiveStage } = useOrchestratorStore();
+  const { stages, activeStageId, participants, sessionInfo } = useOrchestratorStore();
   const { isConnected, isReconnecting, sendMessage } = useWebSocket(id ?? null, 'instructor');
   const [activeTab, setActiveTab] = useState('clase');
   const [points, setPoints] = useState('10');
@@ -37,16 +39,33 @@ export default function InstructorSessionPage() {
   const activeStage = stages.find(s => s.id === activeStageId);
   const activeIdx = stages.findIndex(s => s.id === activeStageId);
 
-  const goPrev = () => { if (activeIdx > 0) setActiveStage(stages[activeIdx - 1].id); };
-  const goNext = () => { if (activeIdx < stages.length - 1) setActiveStage(stages[activeIdx + 1].id); };
+  const goPrev = async () => {
+    if (activeIdx > 0 && id) {
+      try {
+        await sessionsService.changeStage(id, stages[activeIdx - 1].id);
+      } catch (err) {
+        console.error('Error changing stage:', err);
+      }
+    }
+  };
+
+  const goNext = async () => {
+    if (activeIdx < stages.length - 1 && id) {
+      try {
+        await sessionsService.changeStage(id, stages[activeIdx + 1].id);
+      } catch (err) {
+        console.error('Error changing stage:', err);
+      }
+    }
+  };
 
   const handleAwardPoints = () => {
     if (!selectedParticipant || !points) return;
-    sendMessage('POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
+    sendMessage('gamification', 'POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
   };
 
-  const handleSpinner = () => sendMessage('SPINNER_RESULT', { excluded_ids: [] });
-  const handleTimer = () => sendMessage('TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
+  const handleSpinner = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
+  const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
@@ -84,7 +103,20 @@ export default function InstructorSessionPage() {
             variant="outline"
             size="sm"
             className="h-8 gap-2 text-xs"
-            onClick={() => setSessionState(s => s === 'LIVE' ? 'PAUSED' : 'LIVE')}
+            onClick={async () => {
+              if (!id) return;
+              try {
+                if (sessionState === 'LIVE') {
+                  await sessionsService.pause(id);
+                  setSessionState('PAUSED');
+                } else {
+                  await sessionsService.resume(id);
+                  setSessionState('LIVE');
+                }
+              } catch (err) {
+                console.error("Error changing session state:", err);
+              }
+            }}
           >
             {sessionState === 'LIVE' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             {sessionState === 'LIVE' ? 'Pausar' : 'Reanudar'}
@@ -94,7 +126,15 @@ export default function InstructorSessionPage() {
             variant="destructive"
             size="sm"
             className="h-8 gap-2 text-xs"
-            onClick={() => navigate('/sessions')}
+            onClick={async () => {
+              if (!id) return;
+              try {
+                await sessionsService.end(id);
+                navigate('/sessions');
+              } catch (err) {
+                console.error("Error ending session:", err);
+              }
+            }}
           >
             <Square className="w-3 h-3" />
             Finalizar
@@ -125,7 +165,15 @@ export default function InstructorSessionPage() {
                   <motion.div
                     key={stage.id}
                     whileHover={{ x: 2 }}
-                    onClick={() => setActiveStage(stage.id)}
+                    onClick={async () => {
+                      if (id) {
+                        try {
+                          await sessionsService.changeStage(id, stage.id);
+                        } catch (err) {
+                          console.error('Error switching stage:', err);
+                        }
+                      }
+                    }}
                     className={cn(
                       'p-2.5 rounded-lg cursor-pointer border transition-all',
                       isActive
@@ -153,33 +201,35 @@ export default function InstructorSessionPage() {
         {/* CENTER — Main canvas (flex-1) */}
         <main className="flex-1 relative bg-zinc-950 flex items-center justify-center overflow-hidden">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={activeStageId}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col items-center gap-4 text-center"
-            >
-              <div className="w-20 h-20 rounded-2xl card-gradient-blue flex items-center justify-center">
-                {activeStage && (() => { const Icon = STAGE_ICONS[activeStage.type] ?? Zap; return <Icon className="w-10 h-10 text-white" />; })()}
-              </div>
-              <div>
-                <p className="text-white text-xl font-bold">{activeStage?.title}</p>
-                <p className="text-zinc-400 text-sm mt-1">
-                  {activeStage?.type === 'BOARD'
-                    ? 'Pizarra colaborativa activa'
-                    : activeStage?.type === 'PDF'
-                    ? 'Visor de PDF sincronizado'
-                    : activeStage?.type === 'QUIZ'
-                    ? 'Quiz en progreso'
-                    : 'Escena activa'}
-                </p>
-              </div>
-              <Badge className="bg-white/10 text-white border-white/20 text-xs">
-                Vista del estudiante
-              </Badge>
-            </motion.div>
+            {activeStage?.type === 'BOARD' ? (
+              <BoardWrapper role="instructor" sendMessage={sendMessage} />
+            ) : (
+              <motion.div
+                key={activeStageId}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="flex flex-col items-center gap-4 text-center"
+              >
+                <div className="w-20 h-20 rounded-2xl card-gradient-blue flex items-center justify-center">
+                  {activeStage && (() => { const Icon = STAGE_ICONS[activeStage.type] ?? Zap; return <Icon className="w-10 h-10 text-white" />; })()}
+                </div>
+                <div>
+                  <p className="text-white text-xl font-bold">{activeStage?.title}</p>
+                  <p className="text-zinc-400 text-sm mt-1">
+                    {activeStage?.type === 'PDF'
+                      ? 'Visor de PDF sincronizado'
+                      : activeStage?.type === 'QUIZ'
+                      ? 'Quiz en progreso'
+                      : 'Escena activa'}
+                  </p>
+                </div>
+                <Badge className="bg-white/10 text-white border-white/20 text-xs">
+                  Vista del estudiante
+                </Badge>
+              </motion.div>
+            )}
           </AnimatePresence>
 
           {/* Reconnecting banner */}

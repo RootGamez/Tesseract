@@ -92,7 +92,8 @@ class LiveSessionSerializer(serializers.ModelSerializer):
 class LiveSessionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = LiveSession
-        fields = ["title", "template", "scheduled_at", "is_dry_run"]
+        fields = ["id", "title", "template", "scheduled_at", "is_dry_run", "join_code", "state"]
+        read_only_fields = ["id", "join_code", "state"]
 
     def validate_template(self, template):
         request = self.context["request"]

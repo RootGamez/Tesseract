@@ -16,7 +16,7 @@ export default function ChatDrawer() {
     e.preventDefault();
     if (!text.trim()) return;
     
-    sendMessage('CHAT_MESSAGE', { text, is_floating: true });
+    sendMessage('chat', 'CHAT_MESSAGE', { text, is_floating: true });
     setText('');
   };
 

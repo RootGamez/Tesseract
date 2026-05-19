@@ -11,13 +11,14 @@ import { useAuthStore } from '@/features/auth/store/authStore';
 import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { useParams } from 'react-router-dom';
 import { cn } from '@/shared/lib/utils';
+import BoardWrapper from '@/features/board/components/BoardWrapper';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'];
 
 export default function StudentSessionPage() {
   const { id } = useParams<{ id: string }>();
   const { activeScene, points, pointAnimation, clearPointAnimation } = useSceneStore();
-  const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, addMessage } = useChatStore();
+  const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, isSilenced } = useChatStore();
   const { user } = useAuthStore();
   const { sendMessage } = useWebSocket(id ?? null, 'student');
   const [chatInput, setChatInput] = useState('');
@@ -33,28 +34,13 @@ export default function StudentSessionPage() {
   }, [pointAnimation, clearPointAnimation]);
 
   const handleEmoji = (emoji: string) => {
-    sendMessage('EMOJI_REACTION', { emoji });
-    // Show floating locally
-    addMessage({
-      id: Date.now().toString(),
-      author_id: user?.id ?? 'me',
-      author: user?.display_name ?? 'Tú',
-      text: emoji,
-      timestamp: new Date().toISOString(),
-      float: true,
-    });
+    sendMessage('gamification', 'EMOJI_FIRED', { emoji });
   };
 
   const handleSendChat = () => {
+    if (isSilenced) return;
     if (!chatInput.trim()) return;
-    sendMessage('CHAT_MESSAGE', { text: chatInput.trim(), is_floating: true });
-    addMessage({
-      id: Date.now().toString(),
-      author_id: user?.id ?? 'me',
-      author: user?.display_name ?? 'Tú',
-      text: chatInput.trim(),
-      timestamp: new Date().toISOString(),
-    });
+    sendMessage('chat', 'CHAT_MESSAGE', { text: chatInput.trim(), is_floating: true });
     setChatInput('');
   };
 
@@ -64,21 +50,25 @@ export default function StudentSessionPage() {
       {/* ── MAIN SCENE ──────────────────────────────── */}
       <main className="flex-1 relative flex items-center justify-center overflow-hidden">
         <AnimatePresence mode="wait">
-          <motion.div
-            key={activeScene}
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="text-center"
-          >
-            <div className="w-24 h-24 rounded-3xl card-gradient-blue flex items-center justify-center mx-auto mb-6 shadow-2xl">
-              <Trophy className="w-12 h-12 text-white" />
-            </div>
-            <p className="text-zinc-300 text-lg">Escena activa:</p>
-            <p className="text-white text-3xl font-extrabold mt-1">{activeScene}</p>
-            <p className="text-zinc-500 text-sm mt-3">Tu instructor está controlando esta vista</p>
-          </motion.div>
+          {activeScene === 'BOARD' ? (
+            <BoardWrapper role="student" sendMessage={sendMessage} />
+          ) : (
+            <motion.div
+              key={activeScene}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-center"
+            >
+              <div className="w-24 h-24 rounded-3xl card-gradient-blue flex items-center justify-center mx-auto mb-6 shadow-2xl">
+                <Trophy className="w-12 h-12 text-white" />
+              </div>
+              <p className="text-zinc-300 text-lg">Escena activa:</p>
+              <p className="text-white text-3xl font-extrabold mt-1">{activeScene}</p>
+              <p className="text-zinc-500 text-sm mt-3">Tu instructor está controlando esta vista</p>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* Floating chat bubbles */}
@@ -218,10 +208,16 @@ export default function StudentSessionPage() {
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                placeholder="Escribe un mensaje..."
-                className="flex-1 h-9 bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
+                placeholder={isSilenced ? "El chat está silenciado" : "Escribe un mensaje..."}
+                disabled={isSilenced}
+                className="flex-1 h-9 bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm disabled:opacity-50"
               />
-              <Button size="sm" className="h-9 px-3 sidebar-gradient border-0 text-white" onClick={handleSendChat}>
+              <Button
+                size="sm"
+                className="h-9 px-3 sidebar-gradient border-0 text-white disabled:opacity-50"
+                onClick={handleSendChat}
+                disabled={isSilenced}
+              >
                 ➤
               </Button>
             </div>
