@@ -7,6 +7,7 @@ import { Input } from '@/shared/components/ui/input';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { useToast } from '@/shared/hooks/use-toast';
 import { sessionsService } from '@/shared/services/sessionsService';
+import { Toaster } from '@/shared/components/ui/toaster';
 
 export default function JoinSessionPage() {
   const [code, setCode] = useState('');
@@ -97,6 +98,7 @@ export default function JoinSessionPage() {
           </CardContent>
         </Card>
       </motion.div>
+      <Toaster />
     </div>
   );
 }

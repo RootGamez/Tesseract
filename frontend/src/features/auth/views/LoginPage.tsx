@@ -12,6 +12,7 @@ import { Separator } from '@/shared/components/ui/separator';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '@/shared/services/authService';
 import { useToast } from '@/shared/hooks/use-toast';
+import { Toaster } from '@/shared/components/ui/toaster';
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -174,6 +175,7 @@ export default function LoginPage() {
           </p>
         </motion.div>
       </div>
+      <Toaster />
     </div>
   );
 }
