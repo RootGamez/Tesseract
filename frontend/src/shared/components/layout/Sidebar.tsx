@@ -1,12 +1,10 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, BookOpen, PlayCircle, BarChart3, Users,
   Settings, LogOut, Zap, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
-import { Button } from '@/shared/components/ui/button';
-import { Separator } from '@/shared/components/ui/separator';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { authService } from '@/shared/services/authService';
 import { cn } from '@/shared/lib/utils';
@@ -44,13 +42,13 @@ export function Sidebar() {
   return (
     <motion.aside
       animate={{ width: collapsed ? 72 : 240 }}
-      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      transition={{ duration: 0.25, ease: 'easeInOut' }}
       className="sidebar-gradient shadow-sidebar flex flex-col h-full shrink-0 overflow-hidden relative"
     >
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 z-10 w-6 h-6 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-lg"
+        className="absolute -right-3 top-20 z-10 w-6 h-6 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
       >
         {collapsed
           ? <ChevronRight className="w-3 h-3 text-white" />
@@ -62,15 +60,18 @@ export function Sidebar() {
         <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
           <Zap className="w-5 h-5 text-white" />
         </div>
-        {!collapsed && (
-          <motion.span
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="font-bold text-white text-lg"
-          >
-            Tesseract
-          </motion.span>
-        )}
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.span
+              initial={{ opacity: 0, width: 0 }}
+              animate={{ opacity: 1, width: 'auto' }}
+              exit={{ opacity: 0, width: 0 }}
+              className="font-bold text-white text-lg whitespace-nowrap overflow-hidden"
+            >
+              Tesseract
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* User profile */}
@@ -83,36 +84,46 @@ export function Sidebar() {
             {initials}
           </AvatarFallback>
         </Avatar>
-        {!collapsed && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="overflow-hidden">
-            <p className="text-white font-semibold text-sm truncate">{user?.display_name || 'Usuario'}</p>
-            <p className="text-white/50 text-xs capitalize">{user?.role?.toLowerCase() || 'rol'}</p>
-          </motion.div>
-        )}
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="overflow-hidden min-w-0"
+            >
+              <p className="text-white font-semibold text-sm truncate">{user?.display_name || 'Usuario'}</p>
+              <p className="text-white/50 text-xs">{user?.role === 'INSTRUCTOR' ? 'Instructor' : 'Estudiante'}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
         {nav.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/dashboard'}>
+          <NavLink key={to} to={to} end={to === '/dashboard' || to === '/join'}>
             {({ isActive }) => (
               <div className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer',
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer group',
                 collapsed && 'justify-center',
                 isActive
                   ? 'bg-white/15 text-white'
-                  : 'text-white/60 hover:bg-white/08 hover:text-white'
+                  : 'text-white/60 hover:bg-white/10 hover:text-white'
               )}>
                 <Icon className="w-5 h-5 shrink-0" />
-                {!collapsed && (
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-sm font-medium"
-                  >
-                    {label}
-                  </motion.span>
-                )}
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="text-sm font-medium whitespace-nowrap"
+                    >
+                      {label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
                 {isActive && !collapsed && (
                   <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />
                 )}
@@ -122,16 +133,25 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom */}
+      {/* Bottom actions */}
       <div className="p-3 border-t border-white/10 space-y-1">
         <NavLink to="/settings">
-          <div className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:bg-white/08 hover:text-white transition-all cursor-pointer',
-            collapsed && 'justify-center'
-          )}>
-            <Settings className="w-5 h-5 shrink-0" />
-            {!collapsed && <span className="text-sm font-medium">Configuración</span>}
-          </div>
+          {({ isActive }) => (
+            <div className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer',
+              collapsed && 'justify-center',
+              isActive ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/10 hover:text-white'
+            )}>
+              <Settings className="w-5 h-5 shrink-0" />
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
+                    Configuración
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </NavLink>
         <button
           onClick={handleLogout}
@@ -141,7 +161,13 @@ export function Sidebar() {
           )}
         >
           <LogOut className="w-5 h-5 shrink-0" />
-          {!collapsed && <span className="text-sm font-medium">Cerrar Sesión</span>}
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
+                Cerrar Sesión
+              </motion.span>
+            )}
+          </AnimatePresence>
         </button>
       </div>
     </motion.aside>
