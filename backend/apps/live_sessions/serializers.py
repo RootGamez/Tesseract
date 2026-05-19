@@ -61,6 +61,10 @@ class ParticipantSerializer(serializers.ModelSerializer):
 class LiveSessionSerializer(serializers.ModelSerializer):
     instructor = UserPublicSerializer(read_only=True)
     current_stage = StageSerializer(read_only=True)
+    stages = serializers.SerializerMethodField()
+    template_id = serializers.PrimaryKeyRelatedField(
+        source="template", read_only=True
+    )
     participant_count = serializers.IntegerField(
         source="participants.count", read_only=True
     )
@@ -74,12 +78,17 @@ class LiveSessionSerializer(serializers.ModelSerializer):
             "current_stage", "is_dry_run", "is_replay_public",
             "scheduled_at", "started_at", "paused_at", "ended_at",
             "participant_count", "online_count", "available_transitions",
-            "ai_summary", "created_at",
+            "ai_summary", "created_at", "stages", "template_id",
         ]
         read_only_fields = [
             "id", "join_code", "state", "instructor",
             "started_at", "paused_at", "ended_at", "created_at",
         ]
+
+    def get_stages(self, obj):
+        if obj.template:
+            return StageSerializer(obj.template.stages.all(), many=True).data
+        return []
 
     def get_online_count(self, obj):
         return obj.participants.filter(connection_status="ONLINE").count()

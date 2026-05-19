@@ -28,17 +28,9 @@ export interface OrchestratorState {
 
 export const useOrchestratorStore = create<OrchestratorState>((set) => ({
   sessionInfo: { title: 'Tesseract Live Class', duration: 60 },
-  stages: [
-    { id: '1', title: 'Intro y Pizarra', type: 'BOARD', duration: 10, completed: true },
-    { id: '2', title: 'Conceptos Clave', type: 'PDF', duration: 15, completed: false },
-    { id: '3', title: 'Quiz 1', type: 'QUIZ', duration: 5, completed: false },
-  ],
-  activeStageId: '2',
-  participants: [
-    { id: 'p1', name: 'Ana García', points: 45, online: true },
-    { id: 'p2', name: 'Luis Pérez', points: 20, online: true },
-    { id: 'p3', name: 'María Gómez', points: 60, online: false },
-  ],
+  stages: [],
+  activeStageId: '',
+  participants: [],
   
   syncState: (payload) => set((state) => ({ ...state, ...payload })),
   

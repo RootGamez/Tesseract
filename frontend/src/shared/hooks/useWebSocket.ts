@@ -43,6 +43,22 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
           });
           useOrchestratorStore.getState().setActiveStage(payload.current_stage.id);
         }
+        if (payload.stages) {
+          const mappedStages = payload.stages.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            type: s.stage_type,
+            duration: s.duration_estimated_minutes,
+            completed: false,
+          }));
+          syncOrchestrator({
+            stages: mappedStages,
+            sessionInfo: {
+              title: payload.title,
+              duration: payload.duration_seconds ? Math.round(payload.duration_seconds / 60) : 60,
+            },
+          });
+        }
         break;
       case 'STAGE_CHANGED':
         setSceneState({ activeScene: payload.type, stageData: payload.data });

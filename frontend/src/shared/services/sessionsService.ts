@@ -12,6 +12,9 @@ export interface LiveSession {
   ended_at?: string;
   duration_seconds?: number;
   ai_summary?: string;
+  template_id?: string;
+  stages?: any[];
+  current_stage?: any;
   template?: { id: string; name: string };
 }
 
@@ -56,5 +59,13 @@ export const sessionsService = {
   async joinByCode(code: string): Promise<LiveSession> {
     const { data } = await apiClient.post<{ session: LiveSession }>('/api/v1/sessions/join/', { code });
     return data.session;
+  },
+  async addStage(templateId: string, payload: { title: string; stage_type: string; duration_estimated_minutes: number }): Promise<any> {
+    const { data } = await apiClient.post(`/api/v1/sessions/templates/${templateId}/stages/add/`, payload);
+    return data;
+  },
+  async deleteStage(templateId: string, stageId: string): Promise<any> {
+    const { data } = await apiClient.post(`/api/v1/sessions/templates/${templateId}/stages/delete/`, { stage_id: stageId });
+    return data;
   },
 };

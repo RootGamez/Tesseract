@@ -90,6 +90,39 @@ class ClassTemplateViewSet(ModelViewSet):
 
         return Response({"detail": "Orden actualizado."})
 
+    @action(detail=True, methods=["post"], url_path="stages/add")
+    def add_stage(self, request, pk=None):
+        """
+        POST /api/v1/sessions/templates/<pk>/stages/add/
+        Body: {"title": "...", "stage_type": "BOARD", "duration_estimated_minutes": 10}
+        """
+        template = self.get_object()
+        serializer = StageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        max_order = Stage.objects.filter(template=template).count()
+        stage = serializer.save(template=template, order=max_order)
+        return Response(StageSerializer(stage).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="stages/delete")
+    def delete_stage(self, request, pk=None):
+        """
+        POST /api/v1/sessions/templates/<pk>/stages/delete/
+        Body: {"stage_id": "<uuid>"}
+        """
+        template = self.get_object()
+        stage_id = request.data.get("stage_id")
+        stage = get_object_or_404(Stage, pk=stage_id, template=template)
+        stage.delete()
+        
+        # Reorder remaining stages
+        remaining = Stage.objects.filter(template=template).order_by("order")
+        for i, s in enumerate(remaining):
+            if s.order != i:
+                s.order = i
+                s.save(update_fields=["order"])
+                
+        return Response({"detail": "Etapa eliminada."})
+
 
 # ── Live Sessions ─────────────────────────────────────────────────────────────
 
@@ -106,6 +139,21 @@ class LiveSessionViewSet(ModelViewSet):
             "instructor", "current_stage"
         )
 
+    def get_object(self):
+        obj = super().get_object()
+        if not obj.template and self.request.user.is_authenticated:
+            from apps.live_sessions.models import ClassTemplate
+            owner = obj.instructor if obj.instructor else self.request.user
+            template = ClassTemplate.objects.create(
+                owner=owner,
+                title=f"Plantilla - {obj.title}",
+                description="Creada automáticamente al consultar sesión.",
+                is_public=False,
+            )
+            obj.template = template
+            obj.save(update_fields=["template"])
+        return obj
+
     def get_serializer_class(self):
         if self.action == "create":
             return LiveSessionCreateSerializer
@@ -116,8 +164,27 @@ class LiveSessionViewSet(ModelViewSet):
             return [IsInstructor()]
         return [permissions.IsAuthenticated()]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        response_serializer = LiveSessionSerializer(serializer.instance, context=self.get_serializer_context())
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
-        serializer.save(instructor=self.request.user)
+        template = serializer.validated_data.get("template")
+        if not template:
+            from apps.live_sessions.models import ClassTemplate
+            template = ClassTemplate.objects.create(
+                owner=self.request.user,
+                title=f"Plantilla - {serializer.validated_data.get('title')}",
+                description="Creada automáticamente para sesión sin plantilla.",
+                is_public=False,
+            )
+            serializer.save(instructor=self.request.user, template=template)
+        else:
+            serializer.save(instructor=self.request.user)
 
     @action(detail=True, methods=["post"], url_path="transition")
     def transition(self, request, pk=None):

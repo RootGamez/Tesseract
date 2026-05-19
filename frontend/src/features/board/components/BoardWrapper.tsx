@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
+import '@excalidraw/excalidraw/index.css';
 import throttle from 'lodash.throttle';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 
@@ -56,10 +57,6 @@ export default function BoardWrapper({ role, sendMessage }: BoardWrapperProps) {
       isUpdatingRef.current = true;
       excalidrawAPI.updateScene({
         elements: data.elements || [],
-        appState: {
-          ...excalidrawAPI.getAppState(),
-          ...data.appState,
-        },
       });
       setTimeout(() => {
         isUpdatingRef.current = false;
