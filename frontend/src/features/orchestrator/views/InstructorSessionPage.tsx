@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,7 +17,7 @@ import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { sessionsService } from '@/shared/services/sessionsService';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
-import BoardWrapper from '@/features/board/components/BoardWrapper';
+import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import {
   Dialog,
   DialogContent,
@@ -52,6 +52,9 @@ export default function InstructorSessionPage() {
   const [newStageType, setNewStageType] = useState('BOARD');
   const [newStageDuration, setNewStageDuration] = useState('10');
   const [isCreatingStage, setIsCreatingStage] = useState(false);
+
+  // Ref to active BoardWrapper so we can flush state before switching stages
+  const boardRef = useRef<BoardWrapperHandle>(null);
 
   const activeStage = stages.find(s => s.id === activeStageId);
   const activeIdx = stages.findIndex(s => s.id === activeStageId);
@@ -116,6 +119,7 @@ export default function InstructorSessionPage() {
   const goPrev = async () => {
     if (activeIdx > 0 && id) {
       try {
+        if (boardRef.current) await boardRef.current.flushSnapshot();
         await sessionsService.changeStage(id, stages[activeIdx - 1].id);
       } catch (err) {
         console.error('Error changing stage:', err);
@@ -126,6 +130,7 @@ export default function InstructorSessionPage() {
   const goNext = async () => {
     if (activeIdx < stages.length - 1 && id) {
       try {
+        if (boardRef.current) await boardRef.current.flushSnapshot();
         await sessionsService.changeStage(id, stages[activeIdx + 1].id);
       } catch (err) {
         console.error('Error changing stage:', err);
@@ -324,6 +329,7 @@ export default function InstructorSessionPage() {
                     onClick={async () => {
                       if (id && !isActive) {
                         try {
+                          if (boardRef.current) await boardRef.current.flushSnapshot();
                           await sessionsService.changeStage(id, stage.id);
                         } catch (err) {
                           console.error('Error switching stage:', err);
@@ -413,7 +419,7 @@ export default function InstructorSessionPage() {
                 </Button>
               </motion.div>
             ) : activeStage.type === 'BOARD' ? (
-              <BoardWrapper role="instructor" sendMessage={sendMessage} />
+              <BoardWrapper ref={boardRef} key={activeStage.id} role="instructor" sendMessage={sendMessage} />
             ) : (
               <motion.div
                 key={activeStageId}

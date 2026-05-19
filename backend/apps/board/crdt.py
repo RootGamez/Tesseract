@@ -13,6 +13,7 @@ def merge_excalidraw_elements(payload: dict) -> dict:
     """
     incoming_elements: list = payload.get("elements", [])
     app_state: dict = payload.get("appState", {})
+    files: dict = payload.get("files", {})
 
     # Build index by element id for O(1) access
     merged = {el["id"]: el for el in incoming_elements if "id" in el}
@@ -20,6 +21,7 @@ def merge_excalidraw_elements(payload: dict) -> dict:
     return {
         "elements": list(merged.values()),
         "appState": app_state,
+        "files": files,
     }
 
 

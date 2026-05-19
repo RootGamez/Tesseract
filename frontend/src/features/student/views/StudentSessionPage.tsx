@@ -12,6 +12,7 @@ import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { useParams } from 'react-router-dom';
 import { cn } from '@/shared/lib/utils';
 import BoardWrapper from '@/features/board/components/BoardWrapper';
+import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'];
 
@@ -22,6 +23,7 @@ export default function StudentSessionPage() {
   const { user } = useAuthStore();
   const { sendMessage } = useWebSocket(id ?? null, 'student');
   const [chatInput, setChatInput] = useState('');
+  const { activeStageId } = useOrchestratorStore();
 
   const initials = user?.display_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'ME';
 
@@ -51,7 +53,7 @@ export default function StudentSessionPage() {
       <main className="flex-1 relative flex items-center justify-center overflow-hidden">
         <AnimatePresence mode="wait">
           {activeScene === 'BOARD' ? (
-            <BoardWrapper role="student" sendMessage={sendMessage} />
+            <BoardWrapper key={activeStageId} role="student" sendMessage={sendMessage} />
           ) : (
             <motion.div
               key={activeScene}

@@ -239,15 +239,9 @@ class LiveSessionViewSet(ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Save board snapshot before changing (RF-BOARD-02)
-        from apps.board.models import BoardSnapshot
-        board_data = request.data.get("board_snapshot")
-        if board_data and session.current_stage:
-            BoardSnapshot.objects.update_or_create(
-                session=session,
-                stage=session.current_stage,
-                defaults={"elements": board_data.get("elements", []), "app_state": board_data.get("appState", {})},
-            )
+        # Note: board snapshot is saved continuously via WebSocket (RF-BOARD-02).
+        # We do NOT overwrite here with REST data to avoid race conditions.
+        # The WS auto-save already keeps the snapshot up-to-date.
 
         session.current_stage = stage
         session.save(update_fields=["current_stage"])
@@ -267,6 +261,41 @@ class LiveSessionViewSet(ModelViewSet):
                 },
             },
         )
+
+        # Also broadcast BOARD_UPDATE for the new stage so active board canvases update immediately
+        if stage.stage_type == "BOARD":
+            new_snapshot = BoardSnapshot.objects.filter(session=session, stage=stage).first()
+            new_elements = new_snapshot.elements if new_snapshot else []
+            new_app_state = new_snapshot.app_state if new_snapshot else {}
+            new_files = new_app_state.get("files", {}) if isinstance(new_app_state, dict) else {}
+            
+            # Inject presigned URLs for MinIO files synchronously
+            from apps.resources.storage import generate_presigned_url
+            for file_id, file_data in new_files.items():
+                data_url = file_data.get("dataURL", "")
+                if isinstance(data_url, str) and data_url.startswith("s3://"):
+                    s3_key = data_url.replace("s3://", "")
+                    try:
+                        new_files[file_id]["dataURL"] = generate_presigned_url(s3_key)
+                    except Exception as e:
+                        import structlog
+                        structlog.get_logger(__name__).error("failed_to_presign_board_file_in_view", error=str(e))
+            
+            async_to_sync(channel_layer.group_send)(
+                f"board_{session.pk}",
+                {
+                    "type": "board.update",
+                    "event": "BOARD_UPDATE",
+                    "payload": {
+                        "elements": new_elements,
+                        "appState": new_app_state,
+                        "files": new_files,
+                        "stage_id": str(stage.pk),
+                        "is_full_sync": True,
+                    },
+                },
+            )
+
         return Response(LiveSessionSerializer(session).data)
 
     @action(detail=True, methods=["get"], url_path="participants")
