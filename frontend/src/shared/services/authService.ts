@@ -11,9 +11,28 @@ export interface AuthUser {
   avatar_url?: string;
 }
 
+export interface RegisterPayload {
+  email: string;
+  display_name: string;
+  password: string;
+  password_confirm: string;
+  role: 'INSTRUCTOR' | 'STUDENT';
+}
+
 export interface AuthTokens { access: string; refresh: string; user: AuthUser; }
 
 export const authService = {
+  async register(payload: RegisterPayload): Promise<AuthTokens> {
+    const { data } = await apiClient.post<{ user: AuthUser; tokens: { access: string; refresh: string } }>('/api/v1/auth/register/', payload);
+    localStorage.setItem('tesseract_access_token', data.tokens.access);
+    localStorage.setItem('tesseract_refresh_token', data.tokens.refresh);
+    return {
+      access: data.tokens.access,
+      refresh: data.tokens.refresh,
+      user: data.user,
+    };
+  },
+
   async login(credentials: LoginCredentials): Promise<AuthTokens> {
     const { data } = await apiClient.post<AuthTokens>('/api/v1/auth/login/', credentials);
     localStorage.setItem('tesseract_access_token', data.access);

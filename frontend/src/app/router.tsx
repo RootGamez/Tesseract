@@ -4,6 +4,7 @@ import { AppShell } from '@/shared/components/layout/AppShell';
 
 // Auth
 import LoginPage from '@/features/auth/views/LoginPage';
+import RegisterPage from '@/features/auth/views/RegisterPage';
 
 // Student public
 import JoinSessionPage from '@/features/student/views/JoinSessionPage';
@@ -48,6 +49,7 @@ const withShell = (element: React.ReactNode) => (
 export const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <RegisterPage /> },
   { path: '/join',  element: <JoinSessionPage /> },
 
   // Root redirect

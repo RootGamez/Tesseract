@@ -167,12 +167,20 @@ export default function LoginPage() {
             </CardContent>
           </Card>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            ¿Eres estudiante?{' '}
-            <Button variant="link" size="sm" className="p-0" onClick={() => navigate('/join')}>
-              Únete a una clase
-            </Button>
-          </p>
+          <div className="flex flex-col items-center justify-center gap-1 mt-6 text-sm text-muted-foreground">
+            <p>
+              ¿No tienes una cuenta?{' '}
+              <Button variant="link" size="sm" className="p-0 text-primary font-semibold" onClick={() => navigate('/register')}>
+                Regístrate gratis
+              </Button>
+            </p>
+            <p>
+              ¿Eres estudiante?{' '}
+              <Button variant="link" size="sm" className="p-0" onClick={() => navigate('/join')}>
+                Únete a una clase
+              </Button>
+            </p>
+          </div>
         </motion.div>
       </div>
       <Toaster />
