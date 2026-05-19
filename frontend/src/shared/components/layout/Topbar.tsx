@@ -2,7 +2,6 @@ import { Sun, Moon, Bell, Search, Plus } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
-import { Badge } from '@/shared/components/ui/badge';
 import { useTheme } from './ThemeProvider';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { useNavigate } from 'react-router-dom';

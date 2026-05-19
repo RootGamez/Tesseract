@@ -128,9 +128,15 @@ export default function LoginPage() {
                       {...form.register('password')}
                       className="h-11 pr-10"
                     />
-                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                    </Button> 
                   </div>
                   {form.formState.errors.password && (
                     <p className="text-destructive text-xs">{form.formState.errors.password.message}</p>
@@ -162,9 +168,9 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-muted-foreground mt-6">
             ¿Eres estudiante?{' '}
-            <button onClick={() => navigate('/join')} className="text-primary font-semibold hover:underline">
-              Únete con código de clase
-            </button>
+            <Button variant="link" size="sm" className="p-0" onClick={() => navigate('/join')}>
+              Únete a una clase
+            </Button>
           </p>
         </motion.div>
       </div>

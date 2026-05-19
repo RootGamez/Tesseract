@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useChatStore } from '../store/chatStore';
 import { motion, AnimatePresence } from 'framer-motion';
 

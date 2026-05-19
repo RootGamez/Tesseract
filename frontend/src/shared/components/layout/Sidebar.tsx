@@ -9,6 +9,7 @@ import { useAuthStore } from '@/features/auth/store/authStore';
 import { authService } from '@/shared/services/authService';
 import { cn } from '@/shared/lib/utils';
 import { useState } from 'react';
+import { Button } from '../ui/button';
 
 const INSTRUCTOR_NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -46,14 +47,11 @@ export function Sidebar() {
       className="sidebar-gradient shadow-sidebar flex flex-col h-full shrink-0 overflow-hidden relative"
     >
       {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 z-10 w-6 h-6 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-      >
+      <Button variant="ghost" size="icon" className="absolute -right-3 top-4 z-10" onClick={() => setCollapsed(!collapsed)}>
         {collapsed
           ? <ChevronRight className="w-3 h-3 text-white" />
           : <ChevronLeft className="w-3 h-3 text-white" />}
-      </button>
+      </Button>
 
       {/* Logo */}
       <div className="p-5 flex items-center gap-3 shrink-0">
@@ -153,7 +151,7 @@ export function Sidebar() {
             </div>
           )}
         </NavLink>
-        <button
+        <Button variant="ghost"
           onClick={handleLogout}
           className={cn(
             'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:bg-red-500/20 hover:text-red-300 transition-all',
@@ -168,7 +166,7 @@ export function Sidebar() {
               </motion.span>
             )}
           </AnimatePresence>
-        </button>
+        </Button>
       </div>
     </motion.aside>
   );
