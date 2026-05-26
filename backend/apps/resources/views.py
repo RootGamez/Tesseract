@@ -70,6 +70,20 @@ class ResourceUploadView(APIView):
         object_key = f"sessions/{session_id}/{uuid.uuid4()}{ext}"
 
         try:
+            if resource_type == "PDF" and (stage is None or stage.stage_type != "PDF"):
+                template = session.template
+                if template is not None:
+                    stage = Stage.objects.create(
+                        template=template,
+                        title=os.path.splitext(uploaded_file.name)[0],
+                        stage_type="PDF",
+                        order=Stage.objects.filter(template=template).count(),
+                        duration_estimated_minutes=10,
+                        config={},
+                    )
+                    session.current_stage = stage
+                    session.save(update_fields=["current_stage"])
+
             upload_file(uploaded_file, object_key, uploaded_file.content_type or "application/octet-stream")
 
             resource = Resource.objects.create(
