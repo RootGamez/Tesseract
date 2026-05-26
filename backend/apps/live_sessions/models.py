@@ -19,6 +19,7 @@ from core.models import BaseModel
 class StageType(models.TextChoices):
     BOARD = "BOARD", "Pizarra"
     PDF = "PDF", "PDF"
+    PRESENTATION = "PRESENTATION", "Presentación colaborativa"
     VIDEO = "VIDEO", "Video"
     QUIZ = "QUIZ", "Quiz / Encuesta"
     CHAT_FOCUS = "CHAT_FOCUS", "Chat enfocado"

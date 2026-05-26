@@ -5,7 +5,7 @@ import { useOrchestratorStore } from '@/features/orchestrator/store/orchestrator
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 
-const CHANNELS = ['sessions', 'chat', 'board', 'gamification'] as const;
+const CHANNELS = ['sessions', 'chat', 'board', 'presentations', 'gamification'] as const;
 type ChannelType = typeof CHANNELS[number];
 
 export function useWebSocket(sessionId: string | null, role: 'student' | 'instructor' = 'student') {
@@ -15,6 +15,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     sessions: null,
     chat: null,
     board: null,
+    presentations: null,
     gamification: null,
   });
   const reconnectAttempts = useRef(0);
@@ -80,6 +81,17 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         break;
       case 'BOARD_PERMISSION_REVOKED':
         useSceneStore.getState().setCanDraw(false);
+        break;
+
+      // ── Presentations events ────────────
+      case 'PRESENTATION_STATE':
+        window.dispatchEvent(new CustomEvent('presentation-state', { detail: payload }));
+        break;
+      case 'slide.change':
+        window.dispatchEvent(new CustomEvent('presentation-slide-change', { detail: payload }));
+        break;
+      case 'canvas.draw':
+        window.dispatchEvent(new CustomEvent('presentation-canvas-draw', { detail: payload }));
         break;
 
       // ── Chat events ──────────────────────

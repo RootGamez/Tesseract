@@ -18,6 +18,7 @@ import { sessionsService } from '@/shared/services/sessionsService';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
 import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
+import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import {
   Dialog,
   DialogContent,
@@ -409,7 +410,7 @@ export default function InstructorSessionPage() {
                 </div>
                 <h3 className="text-white text-lg font-semibold">Clase sin escenas</h3>
                 <p className="text-zinc-500 text-sm max-w-sm">
-                  Crea una escena (como una Pizarra) desde el panel izquierdo para comenzar a interactuar con tus estudiantes.
+                  Crea una escena (como una Pizarra o una Presentación) desde el panel izquierdo para comenzar a interactuar con tus estudiantes.
                 </p>
                 <Button 
                   onClick={() => setIsAddOpen(true)}
@@ -420,6 +421,8 @@ export default function InstructorSessionPage() {
               </motion.div>
             ) : activeStage.type === 'BOARD' ? (
               <BoardWrapper ref={boardRef} key={activeStage.id} role="instructor" sendMessage={sendMessage} />
+            ) : activeStage.type === 'PDF' || activeStage.type === 'PRESENTATION' ? (
+              <CollaborativePresentationStage key={activeStage.id} sessionId={id ?? ''} role="instructor" sendMessage={sendMessage} />
             ) : (
               <motion.div
                 key={activeStageId}

@@ -52,6 +52,7 @@ LOCAL_APPS = [
     "apps.authentication",
     "apps.live_sessions",
     "apps.board",
+    "apps.presentations",
     "apps.gamification",
     "apps.chat",
     "apps.resources",

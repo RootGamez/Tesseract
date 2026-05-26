@@ -7,6 +7,11 @@ Ref: Documento de Requerimientos §6.3
 STAGE_CHANGED = "STAGE_CHANGED"
 SESSION_STATE = "SESSION_STATE"
 
+# ── Presentaciones colaborativas ─────────────────────────────────────────────
+PRESENTATION_STATE = "PRESENTATION_STATE"
+SLIDE_CHANGED = "slide.change"
+CANVAS_DRAW = "canvas.draw"
+
 # ── Pizarra colaborativa ──────────────────────────────────────────────────────
 BOARD_UPDATE = "BOARD_UPDATE"
 LASER_MOVE = "LASER_MOVE"

@@ -15,6 +15,7 @@ api_v1_patterns = [
     path("auth/", include("apps.authentication.urls")),
     path("sessions/", include("apps.live_sessions.urls")),
     path("board/", include("apps.board.urls")),
+    path("presentations/", include("apps.presentations.urls")),
     path("gamification/", include("apps.gamification.urls")),
     path("chat/", include("apps.chat.urls")),
     path("resources/", include("apps.resources.urls")),
