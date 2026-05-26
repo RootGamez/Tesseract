@@ -11,14 +11,14 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-def _get_s3_client():
+def _get_s3_client(endpoint_url: str | None = None):
     """Return a boto3 S3 client configured for MinIO or AWS S3."""
     kwargs = {
         "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
         "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
         "config": Config(signature_version="s3v4"),
     }
-    endpoint = getattr(settings, "AWS_S3_ENDPOINT_URL", None)
+    endpoint = endpoint_url or getattr(settings, "AWS_S3_ENDPOINT_URL", None)
     if endpoint:
         kwargs["endpoint_url"] = endpoint
 
@@ -59,7 +59,8 @@ def generate_presigned_url(object_key: str, ttl_seconds: int = None) -> str:
     if ttl_seconds is None:
         ttl_seconds = getattr(settings, "PRESIGNED_URL_TTL", 86400)
 
-    client = _get_s3_client()
+    public_endpoint = getattr(settings, "MINIO_PUBLIC_URL", None)
+    client = _get_s3_client(public_endpoint)
     bucket = settings.AWS_STORAGE_BUCKET_NAME
 
     try:
@@ -68,6 +69,7 @@ def generate_presigned_url(object_key: str, ttl_seconds: int = None) -> str:
             Params={"Bucket": bucket, "Key": object_key},
             ExpiresIn=ttl_seconds,
         )
+
         return url
     except Exception as exc:
         logger.error("presigned_url_generation_failed", key=object_key, error=str(exc))

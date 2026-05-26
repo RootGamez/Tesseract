@@ -22,6 +22,21 @@ export interface RegisterPayload {
 export interface AuthTokens { access: string; refresh: string; user: AuthUser; }
 
 export const authService = {
+  async refreshAccessToken(): Promise<string | null> {
+    const refreshToken = localStorage.getItem('tesseract_refresh_token');
+    if (!refreshToken) return null;
+
+    try {
+      const { data } = await apiClient.post<{ access: string }>('/api/v1/auth/token/refresh/', { refresh: refreshToken });
+      localStorage.setItem('tesseract_access_token', data.access);
+      return data.access;
+    } catch {
+      localStorage.removeItem('tesseract_access_token');
+      localStorage.removeItem('tesseract_refresh_token');
+      return null;
+    }
+  },
+
   async register(payload: RegisterPayload): Promise<AuthTokens> {
     const { data } = await apiClient.post<{ user: AuthUser; tokens: { access: string; refresh: string } }>('/api/v1/auth/register/', payload);
     localStorage.setItem('tesseract_access_token', data.tokens.access);

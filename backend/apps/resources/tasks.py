@@ -60,6 +60,17 @@ def upload_resource_to_storage(self, resource_id: str, temp_file_path: str):
 
         logger.info("resource_uploaded", resource_id=resource_id, key=resource.file_key)
 
+        # PPTX presentations are converted into collaborative slide decks.
+        # Enqueue a processing task that will fetch the file from storage so workers
+        # don't need access to the web container's temp files.
+        if resource.resource_type == "PRESENTATION":
+            from apps.presentations.tasks import process_presentation_upload
+            try:
+                process_presentation_upload.delay(str(resource.pk))
+            except Exception:
+                # Fall back to synchronous call if delay fails
+                process_presentation_upload(str(resource.pk))
+
         # Trigger AI question generation for PDFs (RF-AI-01)
         if resource.resource_type == "PDF":
             from apps.ai_copilot.tasks import generate_questions_from_resource

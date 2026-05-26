@@ -7,10 +7,10 @@ import { useOrchestratorStore } from '@/features/orchestrator/store/orchestrator
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const CHANNELS = ['sessions', 'chat', 'board', 'gamification'] as const;
+const CHANNELS = ['sessions', 'chat', 'board', 'presentations', 'gamification'] as const;
 type ChannelType = typeof CHANNELS[number];
 
-// ── Token helpers ─────────────────────────────────────────────────────────────
+// ── Token helpers (Branch 'main') ─────────────────────────────────────────────
 
 /** Returns the number of seconds until the JWT expires (negative if already expired). */
 function jwtSecondsUntilExpiry(token: string): number {
@@ -73,6 +73,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     sessions: null,
     chat: null,
     board: null,
+    presentations: null,
     gamification: null,
   });
   const reconnectAttempts = useRef(0);
@@ -85,7 +86,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
   useEffect(() => { roleRef.current = role; }, [role]);
 
   // ── Zustand action selectors ────────────────────────────────────────────────
-  const setSceneState       = useSceneStore((s) => s.setSceneState);
+  const setSceneState         = useSceneStore((s) => s.setSceneState);
   const addChatMessage      = useChatStore((s) => s.addMessage);
   const deleteChatMessage   = useChatStore((s) => s.deleteMessage);
   const setChatMessages     = useChatStore((s) => s.setMessages);
@@ -94,15 +95,11 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
   const triggerTimer        = useSceneStore((s) => s.triggerTimer);
   const syncOrchestrator    = useOrchestratorStore((s) => s.syncState);
 
-  /**
-   * All Zustand actions live in a single ref.
-   * This breaks the chain: actions change → handleWsEvent changes → connect
-   * changes → useEffect fires → sockets close/reopen in a loop.
-   */
   const actionsRef = useRef({
     setSceneState, addChatMessage, deleteChatMessage, setChatMessages,
     triggerPointAnimation, triggerSpinner, triggerTimer, syncOrchestrator,
   });
+  
   useEffect(() => {
     actionsRef.current = {
       setSceneState, addChatMessage, deleteChatMessage, setChatMessages,
@@ -114,11 +111,29 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
   ]);
 
   // ── Message dispatcher ─────────────────────────────────────────────────────
-  // Plain function — NOT a dependency of connect(); always reads actionsRef.current
   const handleWsMessage = (channel: ChannelType, data: any) => {
     const { event, payload } = data;
     console.log(`[WS Event] [${channel}]`, event, payload);
     const a = actionsRef.current;
+
+    const upsertStage = (stageId: string, stageType: string, stageTitle?: string) => {
+      const store = useOrchestratorStore.getState();
+      const exists = store.stages.some((stage) => stage.id === stageId);
+      if (exists) return;
+
+      const nextStages = [
+        ...store.stages,
+        {
+          id: stageId,
+          title: stageTitle || stageType,
+          type: stageType,
+          duration: 10,
+          completed: false,
+        },
+      ];
+
+      a.syncOrchestrator({ stages: nextStages });
+    };
 
     switch (event) {
       case 'SESSION_STATE':
@@ -148,6 +163,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
 
       case 'STAGE_CHANGED':
         a.setSceneState({ activeScene: payload.type, stageData: payload.data });
+        upsertStage(payload.stage_id, payload.type, payload.data?.title);
         useOrchestratorStore.getState().setActiveStage(payload.stage_id);
         break;
 
@@ -195,6 +211,18 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         useSceneStore.getState().setCanDraw(false);
         break;
 
+      // ── Presentations events (Branch 'pdf') ─────────────────────────────────
+      case 'PRESENTATION_STATE':
+        window.dispatchEvent(new CustomEvent('presentation-state', { detail: payload }));
+        break;
+      case 'slide.change':
+        window.dispatchEvent(new CustomEvent('presentation-slide-change', { detail: payload }));
+        break;
+      case 'canvas.draw':
+        window.dispatchEvent(new CustomEvent('presentation-canvas-draw', { detail: payload }));
+        break;
+
+      // ── Chat events ─────────────────────────────────────────────────────────
       case 'CHAT_MESSAGE':
         a.addChatMessage(payload);
         break;
@@ -207,6 +235,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
       case 'CHAT_USER_SILENCED':
         break;
 
+      // ── Gamification events ─────────────────────────────────────────────────
       case 'EMOJI_FIRED':
         a.addChatMessage({
           id: `${payload.student_id}-${payload.timestamp}`,
@@ -239,11 +268,10 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     }
   };
 
-  // ── Reconnect (uses connectRef to avoid circular dep) ──────────────────────
+  // ── Reconnect ──────────────────────────────────────────────────────────────
   const connectRef = useRef<() => void>(() => {});
 
   const attemptReconnect = useCallback((authFailed = false) => {
-    // Never retry if the server explicitly rejected our credentials
     if (authFailed) {
       console.error('[WS] Auth rejected by server (code 4001/4003). Redirecting to login.');
       setIsConnected(false);
@@ -273,12 +301,11 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     timeoutIds.current.push(id);
   }, []);
 
-  // ── Core connect — stable: only depends on sessionId (via ref) & attemptReconnect
+  // ── Core connect ───────────────────────────────────────────────────────────
   const connect = useCallback(async () => {
     const sId = sessionIdRef.current;
     if (!sId || sId === 'undefined' || sId === 'null') return;
 
-    // ① Ensure we have a non-expired token (refresh silently if needed)
     const token = await getValidToken();
     if (!token) {
       console.error('[WS] No valid token available. Redirecting to login.');
@@ -289,11 +316,8 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     CHANNELS.forEach((channel) => {
       const existing = sockets.current[channel];
 
-      // Skip channels that are already mid-handshake — closing a CONNECTING socket
-      // is what causes the "closed before connection established" browser warning.
       if (existing?.readyState === WebSocket.CONNECTING) return;
 
-      // Clean close of any open socket (suppress its onclose to avoid double-reconnect)
       if (existing && existing.readyState !== WebSocket.CLOSED) {
         existing.onclose = null;
         existing.close(1000, 'Reconnecting');
@@ -324,9 +348,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         sockets.current[channel] = null;
         if (channel === 'sessions') {
           setIsConnected(false);
-          // Auth rejection: 4001 = anonymous user, 4003 = forbidden session
           const isAuthError = AUTH_CLOSE_CODES.has(event.code);
-          // Clean close (1000/1001) or auth error → don't retry
           if (event.code !== 1000 && event.code !== 1001) {
             attemptReconnect(isAuthError);
           }
@@ -334,24 +356,22 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
       };
 
       ws.onerror = () => {
-        // The browser fires onclose immediately after onerror.
-        // Logging here is enough; reconnect logic lives in onclose.
         console.error(`[WS] [${channel}] Connection error`);
       };
     });
-  }, [attemptReconnect]); // handleWsMessage is NOT a dependency — lives in closure via actionsRef
+  }, [attemptReconnect]);
 
   useEffect(() => { connectRef.current = connect; }, [connect]);
 
   // ── Mount / sessionId change ───────────────────────────────────────────────
   useEffect(() => {
-    connect();
+    void connect();
     return () => {
       timeoutIds.current.forEach(clearTimeout);
       CHANNELS.forEach((channel) => {
         const ws = sockets.current[channel];
         if (ws && ws.readyState !== WebSocket.CLOSED) {
-          ws.onclose = null; // Don't trigger reconnect on unmount
+          ws.onclose = null;
           ws.close(1000, 'Component unmounted');
         }
       });

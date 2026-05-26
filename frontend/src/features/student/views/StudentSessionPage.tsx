@@ -13,6 +13,8 @@ import { useParams } from 'react-router-dom';
 import { cn } from '@/shared/lib/utils';
 import BoardWrapper from '@/features/board/components/BoardWrapper';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
+import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
+import PDFStage from '@/features/presentations/components/PDFStage';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'];
 
@@ -70,6 +72,10 @@ export default function StudentSessionPage() {
             </motion.div>
           ) : activeScene === 'BOARD' ? (
             <BoardWrapper key={activeStageId} role="student" sendMessage={sendMessage} />
+          ) : activeScene === 'PRESENTATION' ? (
+            <CollaborativePresentationStage key={activeStageId} sessionId={id ?? ''} role="student" sendMessage={sendMessage} />
+          ) : activeScene === 'PDF' ? (
+            <PDFStage key={activeStageId} sessionId={id ?? ''} role="student" activeStageId={activeStageId} />
           ) : (
             <motion.div
               key={activeScene}
