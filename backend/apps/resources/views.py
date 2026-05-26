@@ -2,7 +2,6 @@
 Resources views — RF-RES-01, RF-RES-02
 """
 import uuid
-import tempfile
 import os
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -12,6 +11,7 @@ from rest_framework.parsers import MultiPartParser
 from core.permissions import IsInstructor, IsParticipantOrInstructor
 from .models import Resource, Snippet
 from .serializers import ResourceSerializer, ResourceUploadSerializer, SnippetSerializer
+from .storage import upload_file, generate_presigned_url
 
 
 class ResourceListView(generics.ListAPIView):
@@ -35,9 +35,19 @@ class ResourceUploadView(APIView):
         serializer = ResourceUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        upload_file = serializer.validated_data["file"]
+        uploaded_file = serializer.validated_data["file"]
+        resource_type = serializer.validated_data["resource_type"]
+
+        if resource_type == "PRESENTATION":
+            allowed_extensions = {".ppt", ".pptx"}
+            ext = os.path.splitext(uploaded_file.name)[1].lower()
+            if ext not in allowed_extensions:
+                return Response(
+                    {"error": {"message": "La presentación debe ser un archivo .ppt o .pptx."}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         
-        if upload_file.size > 50 * 1024 * 1024:
+        if uploaded_file.size > 50 * 1024 * 1024:
             return Response(
                 {"error": {"message": "El archivo excede el límite de 50MB."}},
                 status=status.HTTP_400_BAD_REQUEST
@@ -56,38 +66,40 @@ class ResourceUploadView(APIView):
             except Stage.DoesNotExist:
                 pass
 
-        ext = os.path.splitext(upload_file.name)[1]
+        ext = os.path.splitext(uploaded_file.name)[1]
         object_key = f"sessions/{session_id}/{uuid.uuid4()}{ext}"
 
-        resource = Resource.objects.create(
-            session=session,
-            stage=stage,
-            uploaded_by=request.user,
-            name=upload_file.name,
-            resource_type=serializer.validated_data["resource_type"],
-            file_key=object_key,
-            size_bytes=upload_file.size,
-            content_type=upload_file.content_type,
-            is_dry_run_temp=session.is_dry_run,
-        )
-
-        # Save to temp file for Celery
-        fd, temp_path = tempfile.mkstemp()
         try:
-            with os.fdopen(fd, "wb") as f:
-                for chunk in upload_file.chunks():
-                    f.write(chunk)
-            
-            # Dispatch async upload (RF-RES-01)
-            from .tasks import upload_resource_to_storage
-            upload_resource_to_storage.delay(str(resource.pk), temp_path)
+            upload_file(uploaded_file, object_key, uploaded_file.content_type or "application/octet-stream")
+
+            resource = Resource.objects.create(
+                session=session,
+                stage=stage,
+                uploaded_by=request.user,
+                name=uploaded_file.name,
+                resource_type=resource_type,
+                file_key=object_key,
+                size_bytes=uploaded_file.size,
+                content_type=uploaded_file.content_type,
+                presigned_url=generate_presigned_url(object_key),
+                is_uploaded=True,
+                is_dry_run_temp=session.is_dry_run,
+            )
+
+            # Dispatch presentation processing using the storage-backed file.
+            if resource_type == "PRESENTATION":
+                from apps.presentations.tasks import process_presentation_upload
+                process_presentation_upload.delay(str(resource.pk))
+
+            # Trigger AI question generation for PDFs (RF-AI-01)
+            if resource_type == "PDF":
+                from apps.ai_copilot.tasks import generate_questions_from_resource
+                generate_questions_from_resource.delay(str(resource.pk))
         except Exception as e:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            resource.delete()
+            Resource.objects.filter(session=session, file_key=object_key).delete()
             return Response({"error": {"message": str(e)}}, status=500)
 
-        return Response(ResourceSerializer(resource).data, status=status.HTTP_202_ACCEPTED)
+        return Response(ResourceSerializer(resource).data, status=status.HTTP_201_CREATED)
 
 
 class SnippetListCreateView(generics.ListCreateAPIView):
