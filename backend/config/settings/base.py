@@ -239,6 +239,10 @@ else:
     AWS_DEFAULT_ACL = None
     DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
+# Public URL used by frontend to access MinIO from the host machine (dev).
+# By default point to localhost:9000 so presigned URLs are reachable from the browser.
+MINIO_PUBLIC_URL = config('MINIO_PUBLIC_URL', default='http://localhost:9000')
+
 PRESIGNED_URL_TTL = config("PRESIGNED_URL_TTL_SECONDS", default=86400, cast=int)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────

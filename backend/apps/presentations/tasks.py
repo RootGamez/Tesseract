@@ -57,14 +57,37 @@ def _store_slide_image(presentation_id: str, slide_index: int, image_path: Path)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def process_presentation_upload(self, presentation_id: str, source_file_path: str):
+def process_presentation_upload(self, resource_id: str, source_file_path: str | None = None):
     from apps.presentations.models import Presentation, PresentationSlide
+    from apps.resources.models import Resource
 
     temp_dir = tempfile.mkdtemp(prefix="presentation-render-")
+    downloaded_temp = None
     try:
-        presentation = Presentation.objects.get(pk=presentation_id)
+        resource = Resource.objects.select_related("session", "uploaded_by").get(pk=resource_id)
+        # If no local source file path provided (or file not accessible by worker),
+        # download the file from default storage to a temp file so conversion can run.
+        if not source_file_path or not Path(source_file_path).exists():
+            fd, downloaded_temp = tempfile.mkstemp(suffix="." + (resource.name.rsplit('.', 1)[-1] if '.' in resource.name else 'tmp'))
+            os.close(fd)
+            with open(downloaded_temp, "wb") as out_f:
+                with default_storage.open(resource.file_key, "rb") as in_f:
+                    out_f.write(in_f.read())
+            source_file_path = downloaded_temp
+        presentation, _ = Presentation.objects.get_or_create(
+            session=resource.session,
+            defaults={
+                "uploaded_by": resource.uploaded_by,
+                "title": resource.name.rsplit(".", 1)[0],
+                "source_file_key": resource.file_key,
+                "status": Presentation.Status.PROCESSING,
+            },
+        )
+        presentation.uploaded_by = resource.uploaded_by
+        presentation.title = resource.name.rsplit(".", 1)[0]
+        presentation.source_file_key = resource.file_key
         presentation.status = Presentation.Status.PROCESSING
-        presentation.save(update_fields=["status", "updated_at"])
+        presentation.save(update_fields=["uploaded_by", "title", "source_file_key", "status", "updated_at"])
 
         slide_images = _convert_with_office(source_file_path, temp_dir)
         PresentationSlide.objects.filter(presentation=presentation).delete()
@@ -87,8 +110,16 @@ def process_presentation_upload(self, presentation_id: str, source_file_path: st
         presentation.save(update_fields=["total_slides", "current_slide_index", "status", "updated_at"])
         return {"presentation_id": str(presentation.pk), "slides": presentation.total_slides}
     except Exception as exc:
-        logger.error("presentation_processing_failed", presentation_id=presentation_id, error=str(exc))
-        Presentation.objects.filter(pk=presentation_id).update(status=Presentation.Status.FAILED)
+        logger.error("presentation_processing_failed", resource_id=resource_id, error=str(exc))
+        try:
+            Presentation.objects.filter(pk=resource_id).update(status=Presentation.Status.FAILED)
+        except Exception:
+            pass
         raise self.retry(exc=exc)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        if downloaded_temp and os.path.exists(downloaded_temp):
+            try:
+                os.remove(downloaded_temp)
+            except Exception:
+                pass
