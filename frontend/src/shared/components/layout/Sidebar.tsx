@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, BookOpen, PlayCircle, BarChart3, Users,
-  Settings, LogOut, Zap, ChevronLeft, ChevronRight
+  Settings, LogOut, Zap, ChevronLeft, ChevronRight, Gamepad2
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -15,6 +15,7 @@ const INSTRUCTOR_NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/sessions', icon: PlayCircle, label: 'Mis Clases' },
   { to: '/templates', icon: BookOpen, label: 'Plantillas' },
+  { to: '/quiz-builder', icon: Gamepad2, label: 'Quiz Builder' },
   { to: '/analytics', icon: BarChart3, label: 'Analíticas' },
   { to: '/students', icon: Users, label: 'Estudiantes' },
 ];

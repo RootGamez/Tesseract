@@ -18,6 +18,8 @@ import { sessionsService } from '@/shared/services/sessionsService';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
 import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
+import QuizBuilderPage from '@/features/quiz/views/QuizBuilderPage';
+import { useQuizStore } from '@/features/quiz/store/useQuizStore';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +33,7 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
   PDF: FolderOpen,
   QUIZ: Trophy,
-  GAME: Dices,
+  GAME: Trophy, // Legacy stages: treat same as QUIZ
   BREAK: Timer,
 };
 
@@ -173,10 +175,22 @@ export default function InstructorSessionPage() {
       return;
     }
 
-    if (!templateId) {
+    // templateId may be empty if fetchSession hasn't resolved yet — re-fetch on the fly
+    let resolvedTemplateId = templateId;
+    if (!resolvedTemplateId && id) {
+      try {
+        const freshSession = await sessionsService.get(id);
+        resolvedTemplateId = freshSession.template_id || '';
+        if (resolvedTemplateId) setTemplateId(resolvedTemplateId);
+      } catch (e) {
+        console.error('Could not re-fetch session for templateId:', e);
+      }
+    }
+
+    if (!resolvedTemplateId) {
       toast({
         title: 'Error de Plantilla',
-        description: 'No se detectó una plantilla válida asociada a esta sesión para agregar escenas.',
+        description: 'No se detectó una plantilla válida asociada a esta sesión. Intenta refrescar la página.',
         variant: 'destructive',
       });
       return;
@@ -189,7 +203,7 @@ export default function InstructorSessionPage() {
         stage_type: newStageType,
         duration_estimated_minutes: Number(newStageDuration),
       };
-      const created = await sessionsService.addStage(templateId, payload);
+      const created = await sessionsService.addStage(resolvedTemplateId, payload);
       toast({
         title: 'Escena creada',
         description: `Se guardó la escena "${newStageTitle}" con éxito.`,
@@ -221,6 +235,22 @@ export default function InstructorSessionPage() {
 
   const handleSpinner = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
   const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
+  const handleLaunchQuiz = () => {
+    const activeQuestions = useQuizStore.getState().questions;
+    if (activeQuestions.length === 0 || !activeQuestions[0].id || activeQuestions[0].id.startsWith('q_')) {
+      toast({
+        title: 'Sin preguntas guardadas',
+        description: 'Debes agregar y autoguardar al menos una pregunta en el Quiz Builder antes de lanzarlo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    sendMessage('gamification', 'QUIZ_LAUNCHED', { question_id: activeQuestions[0].id });
+    toast({
+      title: '¡Quiz lanzado!',
+      description: 'La primera pregunta del cuestionario ha sido enviada a todos los estudiantes.',
+    });
+  };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
@@ -420,6 +450,10 @@ export default function InstructorSessionPage() {
               </motion.div>
             ) : activeStage.type === 'BOARD' ? (
               <BoardWrapper ref={boardRef} key={activeStage.id} role="instructor" sendMessage={sendMessage} />
+            ) : activeStage.type === 'QUIZ' || activeStage.type === 'GAME' ? (
+              <div className="w-full h-full overflow-y-auto bg-background text-foreground p-4">
+                <QuizBuilderPage sessionId={id} />
+              </div>
             ) : (
               <motion.div
                 key={activeStageId}
@@ -437,8 +471,6 @@ export default function InstructorSessionPage() {
                   <p className="text-zinc-400 text-sm mt-1">
                     {activeStage?.type === 'PDF'
                       ? 'Visor de PDF sincronizado'
-                      : activeStage?.type === 'QUIZ'
-                      ? 'Quiz en progreso'
                       : 'Escena activa'}
                   </p>
                 </div>
@@ -487,7 +519,7 @@ export default function InstructorSessionPage() {
                     <Timer className="w-5 h-5 text-accent" />
                     Timer
                   </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-1 text-xs col-span-2">
+                  <Button variant="outline" className="h-16 flex-col gap-1 text-xs col-span-2 hover:bg-primary/5 hover:text-primary" onClick={handleLaunchQuiz}>
                     <Trophy className="w-5 h-5 text-yellow-500" />
                     Lanzar Quiz
                   </Button>
@@ -695,36 +727,45 @@ export default function InstructorSessionPage() {
                   </Badge>
                 </div>
 
-                {/* QUIZ (Quiz Evaluativo) - Disabled */}
+                {/* QUIZ (Quiz Evaluativo) */}
                 <div
-                  className="p-3.5 rounded-xl border-2 border-zinc-900 bg-zinc-900/20 text-zinc-600 flex flex-col gap-2 relative cursor-not-allowed"
+                  onClick={() => setNewStageType('QUIZ')}
+                  className={cn(
+                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
+                    newStageType === 'QUIZ'
+                      ? 'border-primary bg-primary/10 text-white'
+                      : 'border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60'
+                  )}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-zinc-950 flex items-center justify-center shrink-0 text-zinc-600">
+                    <div className={cn(
+                      'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      newStageType === 'QUIZ' ? 'bg-primary text-white' : 'bg-zinc-800 text-zinc-400'
+                    )}>
                       <Trophy className="w-4 h-4" />
                     </div>
-                    <span className="font-semibold text-sm text-zinc-500">Quiz</span>
+                    <span className="font-semibold text-sm text-white">Quiz</span>
                   </div>
-                  <p className="text-[11px] leading-snug text-zinc-600">
+                  <p className="text-[11px] leading-snug text-zinc-400">
                     Encuestas y cuestionarios rápidos de opción múltiple.
                   </p>
-                  <Badge className="absolute top-2 right-2 bg-zinc-800 text-zinc-500 hover:bg-zinc-800 border-0 text-[9px] px-1.5 py-0">
-                    Próximamente
+                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400 hover:bg-green-500/20 border-0 text-[9px] px-1.5 py-0">
+                    Listo
                   </Badge>
                 </div>
 
-                {/* GAME (Trivia / Juego) - Disabled */}
+                {/* BREAK (Pausa) - Disabled for now */}
                 <div
                   className="p-3.5 rounded-xl border-2 border-zinc-900 bg-zinc-900/20 text-zinc-600 flex flex-col gap-2 relative cursor-not-allowed"
                 >
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-lg bg-zinc-950 flex items-center justify-center shrink-0 text-zinc-600">
-                      <Dices className="w-4 h-4" />
+                      <Timer className="w-4 h-4" />
                     </div>
-                    <span className="font-semibold text-sm text-zinc-500">Trivia</span>
+                    <span className="font-semibold text-sm text-zinc-500">Pausa</span>
                   </div>
                   <p className="text-[11px] leading-snug text-zinc-600">
-                    Preguntas gamificadas para incentivar la participación.
+                    Segmento de descanso cronometrado entre actividades.
                   </p>
                   <Badge className="absolute top-2 right-2 bg-zinc-800 text-zinc-500 hover:bg-zinc-800 border-0 text-[9px] px-1.5 py-0">
                     Próximamente
