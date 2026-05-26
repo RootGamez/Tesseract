@@ -11,14 +11,14 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-def _get_s3_client():
+def _get_s3_client(endpoint_url: str | None = None):
     """Return a boto3 S3 client configured for MinIO or AWS S3."""
     kwargs = {
         "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
         "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
         "config": Config(signature_version="s3v4"),
     }
-    endpoint = getattr(settings, "AWS_S3_ENDPOINT_URL", None)
+    endpoint = endpoint_url or getattr(settings, "AWS_S3_ENDPOINT_URL", None)
     if endpoint:
         kwargs["endpoint_url"] = endpoint
 
@@ -59,9 +59,8 @@ def generate_presigned_url(object_key: str, ttl_seconds: int = None) -> str:
     if ttl_seconds is None:
         ttl_seconds = getattr(settings, "PRESIGNED_URL_TTL", 86400)
 
-    from urllib.parse import urlparse, urlunparse
-
-    client = _get_s3_client()
+    public_endpoint = getattr(settings, "MINIO_PUBLIC_URL", None)
+    client = _get_s3_client(public_endpoint)
     bucket = settings.AWS_STORAGE_BUCKET_NAME
 
     try:
@@ -70,20 +69,6 @@ def generate_presigned_url(object_key: str, ttl_seconds: int = None) -> str:
             Params={"Bucket": bucket, "Key": object_key},
             ExpiresIn=ttl_seconds,
         )
-
-        # Optionally rewrite internal MinIO host to a public URL for browser access.
-        # Configure `MINIO_PUBLIC_URL` in environment if you need a custom host.
-        public_base = getattr(settings, "MINIO_PUBLIC_URL", None)
-        if public_base and settings.AWS_S3_ENDPOINT_URL:
-            try:
-                parsed = urlparse(url)
-                public_parsed = urlparse(public_base)
-                # replace scheme and netloc with public values
-                new_parsed = parsed._replace(scheme=public_parsed.scheme or parsed.scheme, netloc=public_parsed.netloc or parsed.netloc)
-                url = urlunparse(new_parsed)
-            except Exception:
-                # If anything fails, fall back to the original URL
-                pass
 
         return url
     except Exception as exc:
@@ -110,24 +95,10 @@ def get_or_refresh_presigned_url(resource) -> str:
     Updates the resource model in-place but does NOT save to DB.
     """
     now = timezone.now()
-    public_base = getattr(settings, "MINIO_PUBLIC_URL", None)
-
-    def _rewrite(url: str) -> str:
-        if not url or not public_base or not settings.AWS_S3_ENDPOINT_URL:
-            return url
-        try:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(url)
-            public_parsed = urlparse(public_base)
-            new_parsed = parsed._replace(scheme=public_parsed.scheme or parsed.scheme, netloc=public_parsed.netloc or parsed.netloc)
-            return urlunparse(new_parsed)
-        except Exception:
-            return url
-
     if resource.presigned_url and resource.url_expires_at and resource.url_expires_at > now:
-        return _rewrite(resource.presigned_url)
+        return resource.presigned_url
 
     url = generate_presigned_url(resource.file_key)
     resource.presigned_url = url
     resource.url_expires_at = now + timedelta(seconds=settings.PRESIGNED_URL_TTL)
-    return _rewrite(url)
+    return url
