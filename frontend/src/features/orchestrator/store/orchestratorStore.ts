@@ -16,7 +16,7 @@ export interface Participant {
 }
 
 export interface OrchestratorState {
-  sessionInfo: { title: string; duration: number };
+  sessionInfo: { title: string; duration: number; join_code?: string };
   stages: Stage[];
   activeStageId: string;
   participants: Participant[];
@@ -27,7 +27,7 @@ export interface OrchestratorState {
 }
 
 export const useOrchestratorStore = create<OrchestratorState>((set) => ({
-  sessionInfo: { title: 'Tesseract Live Class', duration: 60 },
+  sessionInfo: { title: 'Tesseract Live Class', duration: 60, join_code: '' },
   stages: [],
   activeStageId: '',
   participants: [],

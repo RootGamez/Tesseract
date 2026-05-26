@@ -1,26 +1,74 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import axios from 'axios';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 import { useChatStore } from '@/features/chat/store/chatStore';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
-import { authService } from '@/shared/services/authService';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const CHANNELS = ['sessions', 'chat', 'board', 'presentations', 'gamification'] as const;
 type ChannelType = typeof CHANNELS[number];
 
-function getJwtExpiry(token: string): number | null {
+// ── Token helpers (Branch 'main') ─────────────────────────────────────────────
+
+/** Returns the number of seconds until the JWT expires (negative if already expired). */
+function jwtSecondsUntilExpiry(token: string): number {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp - Math.floor(Date.now() / 1000);
   } catch {
+    return -1; // treat unparseable tokens as expired
+  }
+}
+
+/**
+ * Returns a valid access token.
+ * If the stored token is about to expire (< 30 s), attempts a silent refresh.
+ * Returns null if no token is available or refresh fails (caller should redirect to login).
+ */
+async function getValidToken(): Promise<string | null> {
+  const access = localStorage.getItem('tesseract_access_token');
+  const refresh = localStorage.getItem('tesseract_refresh_token');
+
+  if (!access) return null;
+
+  // Token still has more than 30 seconds left — use it as-is
+  if (jwtSecondsUntilExpiry(access) > 30) return access;
+
+  // Token expired or about to — try refresh
+  if (!refresh) {
+    console.warn('[WS] Access token expired and no refresh token found.');
+    return null;
+  }
+
+  try {
+    const { data } = await axios.post(
+      `${API_URL}/api/v1/auth/token/refresh/`,
+      { refresh },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    localStorage.setItem('tesseract_access_token', data.access);
+    if (data.refresh) localStorage.setItem('tesseract_refresh_token', data.refresh);
+    console.log('[WS] Access token silently refreshed.');
+    return data.access;
+  } catch {
+    console.warn('[WS] Token refresh failed — clearing session.');
+    localStorage.removeItem('tesseract_access_token');
+    localStorage.removeItem('tesseract_refresh_token');
     return null;
   }
 }
 
+// ── Close codes that mean "auth rejected — stop retrying" ─────────────────────
+const AUTH_CLOSE_CODES = new Set([4001, 4003]);
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
 export function useWebSocket(sessionId: string | null, role: 'student' | 'instructor' = 'student') {
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+
   const sockets = useRef<{ [key in ChannelType]: WebSocket | null }>({
     sessions: null,
     chat: null,
@@ -29,22 +77,44 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     gamification: null,
   });
   const reconnectAttempts = useRef(0);
-  const maxReconnectInterval = 30000;
   const timeoutIds = useRef<number[]>([]);
-  const connectInFlight = useRef(false);
 
-  const setSceneState = useSceneStore((state) => state.setSceneState);
-  const addChatMessage = useChatStore((state) => state.addMessage);
-  const deleteChatMessage = useChatStore((state) => state.deleteMessage);
-  const setChatMessages = useChatStore((state) => state.setMessages);
-  const triggerPointAnimation = useSceneStore((state) => state.triggerPointAnimation);
-  const triggerSpinner = useSceneStore((state) => state.triggerSpinner);
-  const triggerTimer = useSceneStore((state) => state.triggerTimer);
-  const syncOrchestrator = useOrchestratorStore((state) => state.syncState);
+  // Keep mutable values in refs so stable callbacks always see the latest
+  const sessionIdRef = useRef(sessionId);
+  const roleRef = useRef(role);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { roleRef.current = role; }, [role]);
 
-  const handleWsEvent = useCallback((channel: ChannelType, data: any) => {
+  // ── Zustand action selectors ────────────────────────────────────────────────
+  const setSceneState         = useSceneStore((s) => s.setSceneState);
+  const addChatMessage      = useChatStore((s) => s.addMessage);
+  const deleteChatMessage   = useChatStore((s) => s.deleteMessage);
+  const setChatMessages     = useChatStore((s) => s.setMessages);
+  const triggerPointAnimation = useSceneStore((s) => s.triggerPointAnimation);
+  const triggerSpinner      = useSceneStore((s) => s.triggerSpinner);
+  const triggerTimer        = useSceneStore((s) => s.triggerTimer);
+  const syncOrchestrator    = useOrchestratorStore((s) => s.syncState);
+
+  const actionsRef = useRef({
+    setSceneState, addChatMessage, deleteChatMessage, setChatMessages,
+    triggerPointAnimation, triggerSpinner, triggerTimer, syncOrchestrator,
+  });
+  
+  useEffect(() => {
+    actionsRef.current = {
+      setSceneState, addChatMessage, deleteChatMessage, setChatMessages,
+      triggerPointAnimation, triggerSpinner, triggerTimer, syncOrchestrator,
+    };
+  }, [
+    setSceneState, addChatMessage, deleteChatMessage, setChatMessages,
+    triggerPointAnimation, triggerSpinner, triggerTimer, syncOrchestrator,
+  ]);
+
+  // ── Message dispatcher ─────────────────────────────────────────────────────
+  const handleWsMessage = (channel: ChannelType, data: any) => {
     const { event, payload } = data;
     console.log(`[WS Event] [${channel}]`, event, payload);
+    const a = actionsRef.current;
 
     const upsertStage = (stageId: string, stageType: string, stageTitle?: string) => {
       const store = useOrchestratorStore.getState();
@@ -62,13 +132,13 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         },
       ];
 
-      syncOrchestrator({ stages: nextStages });
+      a.syncOrchestrator({ stages: nextStages });
     };
 
     switch (event) {
       case 'SESSION_STATE':
         if (payload.current_stage) {
-          setSceneState({
+          a.setSceneState({
             activeScene: payload.current_stage.stage_type,
             stageData: payload.current_stage.config,
           });
@@ -76,29 +146,56 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         }
         if (payload.stages) {
           const mappedStages = payload.stages.map((s: any) => ({
-            id: s.id,
-            title: s.title,
-            type: s.stage_type,
-            duration: s.duration_estimated_minutes,
-            completed: false,
+            id: s.id, title: s.title, type: s.stage_type,
+            duration: s.duration_estimated_minutes, completed: false,
           }));
-          syncOrchestrator({
+          a.syncOrchestrator({
             stages: mappedStages,
             sessionInfo: {
               title: payload.title,
-              duration: payload.duration_seconds ? Math.round(payload.duration_seconds / 60) : 60,
+              duration: payload.duration_seconds
+                ? Math.round(payload.duration_seconds / 60)
+                : 60,
             },
           });
         }
         break;
+
       case 'STAGE_CHANGED':
-        setSceneState({ activeScene: payload.type, stageData: payload.data });
+        a.setSceneState({ activeScene: payload.type, stageData: payload.data });
         upsertStage(payload.stage_id, payload.type, payload.data?.title);
         useOrchestratorStore.getState().setActiveStage(payload.stage_id);
         break;
+
       case 'PARTICIPANT_JOINED':
+        {
+          const state = useOrchestratorStore.getState();
+          const exists = state.participants.some(p => p.id === payload.participant_id);
+          let newParticipants = [...state.participants];
+          if (exists) {
+            newParticipants = newParticipants.map(p =>
+              p.id === payload.participant_id ? { ...p, online: true } : p
+            );
+          } else {
+            newParticipants.push({
+              id: payload.participant_id,
+              name: payload.display_name,
+              points: 0,
+              online: true,
+            });
+          }
+          state.syncState({ participants: newParticipants });
+        }
+        break;
+
       case 'PARTICIPANT_LEFT':
-        // Refetch participants list from REST API to keep in sync
+        {
+          const state = useOrchestratorStore.getState();
+          const newParticipants = state.participants.map(p =>
+            p.id === payload.participant_id ? { ...p, online: false } : p
+          );
+          state.syncState({ participants: newParticipants });
+        }
         break;
 
       case 'BOARD_UPDATE':
@@ -114,7 +211,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         useSceneStore.getState().setCanDraw(false);
         break;
 
-      // ── Presentations events ────────────
+      // ── Presentations events (Branch 'pdf') ─────────────────────────────────
       case 'PRESENTATION_STATE':
         window.dispatchEvent(new CustomEvent('presentation-state', { detail: payload }));
         break;
@@ -125,25 +222,22 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         window.dispatchEvent(new CustomEvent('presentation-canvas-draw', { detail: payload }));
         break;
 
-      // ── Chat events ──────────────────────
+      // ── Chat events ─────────────────────────────────────────────────────────
       case 'CHAT_MESSAGE':
-        addChatMessage(payload);
+        a.addChatMessage(payload);
         break;
       case 'CHAT_HISTORY':
-        if (payload && payload.messages) {
-          setChatMessages(payload.messages);
-        }
+        if (payload?.messages) a.setChatMessages(payload.messages);
         break;
       case 'CHAT_MESSAGE_DELETED':
-        deleteChatMessage(payload.message_id);
+        a.deleteChatMessage(payload.message_id);
         break;
       case 'CHAT_USER_SILENCED':
-        // Check if the silenced user is me or check participant ID
         break;
 
-      // ── Gamification events ──────────────
+      // ── Gamification events ─────────────────────────────────────────────────
       case 'EMOJI_FIRED':
-        addChatMessage({
+        a.addChatMessage({
           id: `${payload.student_id}-${payload.timestamp}`,
           author_id: payload.student_id,
           author: payload.display_name,
@@ -153,69 +247,83 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         });
         break;
       case 'POINTS_AWARDED':
-        triggerPointAnimation(payload.points, payload.total);
-        if (role === 'instructor') {
-          useOrchestratorStore.getState().updateParticipantPoints(payload.participant_id, payload.total);
+        a.triggerPointAnimation(payload.points, payload.total);
+        if (roleRef.current === 'instructor') {
+          useOrchestratorStore.getState().updateParticipantPoints(
+            payload.participant_id, payload.total
+          );
         }
         break;
       case 'SPINNER_RESULT':
-        triggerSpinner(payload);
+        a.triggerSpinner(payload);
         break;
       case 'TIMER_STARTED':
-        triggerTimer(payload);
+        a.triggerTimer(payload);
         break;
       case 'TIMER_PAUSED':
       case 'TIMER_CANCELLED':
-        // Clear timer on pause/cancel
         break;
       default:
         break;
     }
-  }, [setSceneState, addChatMessage, deleteChatMessage, setChatMessages, triggerPointAnimation, triggerSpinner, triggerTimer, syncOrchestrator, role]);
+  };
 
-  const attemptReconnect = useCallback(() => {
-    if (reconnectAttempts.current >= 5) {
-      const id = window.setTimeout(connect, maxReconnectInterval);
+  // ── Reconnect ──────────────────────────────────────────────────────────────
+  const connectRef = useRef<() => void>(() => {});
+
+  const attemptReconnect = useCallback((authFailed = false) => {
+    if (authFailed) {
+      console.error('[WS] Auth rejected by server (code 4001/4003). Redirecting to login.');
+      setIsConnected(false);
+      setIsReconnecting(false);
+      window.location.href = '/login';
+      return;
+    }
+
+    const MAX_ATTEMPTS = 5;
+    const MAX_INTERVAL = 30_000;
+
+    setIsReconnecting(true);
+
+    if (reconnectAttempts.current >= MAX_ATTEMPTS) {
+      console.warn('[WS] Max reconnect attempts reached. Will retry in 30 s.');
+      const id = window.setTimeout(() => connectRef.current(), MAX_INTERVAL);
       timeoutIds.current.push(id);
       return;
     }
-    
-    setIsReconnecting(true);
-    const timeout = Math.pow(2, reconnectAttempts.current) * 1000;
+
+    const delay = Math.min(Math.pow(2, reconnectAttempts.current) * 1000, MAX_INTERVAL);
+    console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1})`);
     const id = window.setTimeout(() => {
       reconnectAttempts.current += 1;
-      connect();
-    }, Math.min(timeout, maxReconnectInterval));
+      connectRef.current();
+    }, delay);
     timeoutIds.current.push(id);
   }, []);
 
+  // ── Core connect ───────────────────────────────────────────────────────────
   const connect = useCallback(async () => {
-    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') return;
+    const sId = sessionIdRef.current;
+    if (!sId || sId === 'undefined' || sId === 'null') return;
 
-    if (connectInFlight.current) return;
-    connectInFlight.current = true;
-
-    let token = localStorage.getItem('tesseract_access_token');
-    const expiry = token ? getJwtExpiry(token) : null;
-    const isExpired = !expiry || expiry <= Date.now() + 30_000;
-
-    if (!token || isExpired) {
-      token = await authService.refreshAccessToken();
-    }
-
+    const token = await getValidToken();
     if (!token) {
-      console.warn('No JWT access token found, WebSocket connection deferred');
-      connectInFlight.current = false;
+      console.error('[WS] No valid token available. Redirecting to login.');
+      window.location.href = '/login';
       return;
     }
 
     CHANNELS.forEach((channel) => {
-      // If there is already a socket open or connecting, close it first
-      if (sockets.current[channel]) {
-        sockets.current[channel]?.close();
+      const existing = sockets.current[channel];
+
+      if (existing?.readyState === WebSocket.CONNECTING) return;
+
+      if (existing && existing.readyState !== WebSocket.CLOSED) {
+        existing.onclose = null;
+        existing.close(1000, 'Reconnecting');
       }
 
-      const url = `${WS_URL}/${channel}/${sessionId}/?token=${token}`;
+      const url = `${WS_URL}/${channel}/${sId}/?token=${token}`;
       const ws = new WebSocket(url);
       sockets.current[channel] = ws;
 
@@ -224,61 +332,59 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
           setIsConnected(true);
           setIsReconnecting(false);
           reconnectAttempts.current = 0;
-        }
-        // Send initial resync requests
-        if (channel === 'sessions') {
           ws.send(JSON.stringify({ event: 'REQUEST_FULL_SYNC' }));
         }
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = ({ data }) => {
         try {
-          const data = JSON.parse(event.data);
-          handleWsEvent(channel, data);
+          handleWsMessage(channel, JSON.parse(data));
         } catch (err) {
-          console.error(`[WS Error] [${channel}] Parse Error`, err);
+          console.error(`[WS] [${channel}] Parse error`, err);
         }
       };
 
       ws.onclose = (event) => {
+        sockets.current[channel] = null;
         if (channel === 'sessions') {
           setIsConnected(false);
-          // If not closed cleanly, attempt reconnect
+          const isAuthError = AUTH_CLOSE_CODES.has(event.code);
           if (event.code !== 1000 && event.code !== 1001) {
-            attemptReconnect();
+            attemptReconnect(isAuthError);
           }
         }
-        sockets.current[channel] = null;
       };
 
-      ws.onerror = (err) => {
-        console.error(`[WS Error] [${channel}] Error`, err);
-        ws.close();
+      ws.onerror = () => {
+        console.error(`[WS] [${channel}] Connection error`);
       };
     });
+  }, [attemptReconnect]);
 
-    connectInFlight.current = false;
+  useEffect(() => { connectRef.current = connect; }, [connect]);
 
-  }, [sessionId, attemptReconnect, handleWsEvent]);
-
+  // ── Mount / sessionId change ───────────────────────────────────────────────
   useEffect(() => {
     void connect();
     return () => {
       timeoutIds.current.forEach(clearTimeout);
       CHANNELS.forEach((channel) => {
-        if (sockets.current[channel]) {
-          sockets.current[channel]?.close();
+        const ws = sockets.current[channel];
+        if (ws && ws.readyState !== WebSocket.CLOSED) {
+          ws.onclose = null;
+          ws.close(1000, 'Component unmounted');
         }
       });
     };
   }, [connect]);
 
+  // ── Public API ─────────────────────────────────────────────────────────────
   const sendMessage = useCallback((channel: ChannelType, event: string, payload: any) => {
     const ws = sockets.current[channel];
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ event, payload }));
     } else {
-      console.warn(`WebSocket for channel "${channel}" is not open.`);
+      console.warn(`[WS] Channel "${channel}" is not open.`);
     }
   }, []);
 

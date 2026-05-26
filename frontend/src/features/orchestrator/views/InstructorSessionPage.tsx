@@ -3,8 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
-  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2
+  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2,
+  Copy, Link, UserPlus
 } from 'lucide-react';
+
+// UI Shared Components
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
@@ -12,22 +15,39 @@ import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
 import { Separator } from '@/shared/components/ui/separator';
 import { Input } from '@/shared/components/ui/input';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle 
+} from '@/shared/components/ui/dialog';
+
+// Core State & Services
 import { useOrchestratorStore } from '../store/orchestratorStore';
 import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { sessionsService } from '@/shared/services/sessionsService';
 import apiClient from '@/shared/services/apiClient';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
+
+// Features — Branch 'pdf' (Presentaciones y documentos)
 import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import PDFStage from '@/features/presentations/components/PDFStage';
 
+// Features — Branch 'main' (Gamificación y Quizzes)
+import RouletteWheel from '@/features/gamification/components/RouletteWheel';
+import QuizBuilderPage from '@/features/quiz/views/QuizBuilderPage';
+import { useQuizStore } from '@/features/quiz/store/useQuizStore';
+
 const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
   PDF: FolderOpen,
+  PRESENTATION: FolderOpen,
   QUIZ: Trophy,
-  GAME: Dices,
+  GAME: Trophy,
   BREAK: Timer,
 };
 
@@ -37,24 +57,29 @@ export default function InstructorSessionPage() {
   const { toast } = useToast();
   const { stages, activeStageId, participants, sessionInfo } = useOrchestratorStore();
   const { isConnected, isReconnecting, sendMessage } = useWebSocket(id ?? null, 'instructor');
+  
   const [activeTab, setActiveTab] = useState('clase');
+  const [isRouletteOpen, setIsRouletteOpen] = useState(false);
   const [points, setPoints] = useState('10');
   const [selectedParticipant, setSelectedParticipant] = useState('');
   const [sessionState, setSessionState] = useState<'LIVE' | 'PAUSED'>('LIVE');
 
   const [templateId, setTemplateId] = useState<string>('');
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
   const [newStageTitle, setNewStageTitle] = useState('');
   const [newStageType, setNewStageType] = useState('BOARD');
   const [newStageDuration, setNewStageDuration] = useState('10');
   const [isCreatingStage, setIsCreatingStage] = useState(false);
   const [pptFile, setPptFile] = useState<File | null>(null);
 
-  // Ref to active BoardWrapper so we can flush state before switching stages
   const boardRef = useRef<BoardWrapperHandle>(null);
 
   const activeStage = stages.find(s => s.id === activeStageId);
   const activeIdx = stages.findIndex(s => s.id === activeStageId);
+
+  const handleSpinner = () => setIsRouletteOpen(true);
 
   const fetchSession = async () => {
     if (!id) return;
@@ -85,13 +110,35 @@ export default function InstructorSessionPage() {
         duration: s.duration_estimated_minutes,
         completed: false,
       }));
+
+      let mappedParticipants: any[] = [];
+      try {
+        const participantsList = await sessionsService.getParticipants(id);
+        mappedParticipants = (participantsList || []).map((p: any) => ({
+          id: p.id,
+          name: p.display_name,
+          points: p.points,
+          online: p.connection_status === 'ONLINE',
+        }));
+      } catch (err) {
+        console.error('Error fetching participants:', err);
+      }
+
+      if (!session.current_stage && mappedStages[0]?.id) {
+        sessionsService.changeStage(id, mappedStages[0].id).catch(err => {
+          console.error('Failed to auto-initialize stage:', err);
+        });
+      }
+
       useOrchestratorStore.getState().syncState({
         sessionInfo: {
           title: session.title,
           duration: session.duration_seconds ? Math.round(session.duration_seconds / 60) : 60,
+          join_code: session.join_code ?? '',
         },
         stages: mappedStages,
         activeStageId: session.current_stage?.id || (mappedStages[0]?.id || ''),
+        participants: mappedParticipants,
       });
       setTemplateId(session.template_id || '');
       setSessionState(session.state === 'PAUSED' ? 'PAUSED' : 'LIVE');
@@ -156,9 +203,8 @@ export default function InstructorSessionPage() {
         duration: Number(newStageDuration),
         completed: false,
       };
-      const updatedStages = [...stages, newStage];
       useOrchestratorStore.getState().syncState({
-        stages: updatedStages,
+        stages: [...stages, newStage],
         activeStageId: activeStageId || mockId,
       });
       toast({
@@ -172,16 +218,27 @@ export default function InstructorSessionPage() {
       return;
     }
 
-    if (!templateId) {
+    let resolvedTemplateId = templateId;
+    if (!resolvedTemplateId && id) {
+      try {
+        const freshSession = await sessionsService.get(id);
+        resolvedTemplateId = freshSession.template_id || '';
+        if (resolvedTemplateId) setTemplateId(resolvedTemplateId);
+      } catch (e) {
+        console.error('Could not re-fetch session for templateId:', e);
+      }
+    }
+
+    if (!resolvedTemplateId) {
       toast({
         title: 'Error de Plantilla',
-        description: 'No se detectó una plantilla válida asociada a esta sesión para agregar escenas.',
+        description: 'No se detectó una plantilla válida asociada a esta sesión.',
         variant: 'destructive',
       });
       return;
     }
 
-    if (newStageType === 'PDF' && !pptFile) {
+    if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && !pptFile) {
       toast({
         title: 'Archivo requerido',
         description: 'Selecciona un archivo PDF o PPTX para esta escena antes de crearla.',
@@ -197,18 +254,10 @@ export default function InstructorSessionPage() {
         stage_type: newStageType,
         duration_estimated_minutes: Number(newStageDuration),
       };
-      const created = await sessionsService.addStage(templateId, payload);
+      
+      const created = await sessionsService.addStage(resolvedTemplateId, payload);
 
-      if (newStageType === 'PDF') {
-        if (!pptFile) {
-          toast({
-            title: 'Archivo requerido',
-            description: 'Selecciona un archivo PDF o PPTX para esta escena.',
-            variant: 'destructive',
-          });
-          return;
-        }
-
+      if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && pptFile) {
         const extension = pptFile.name.split('.').pop()?.toLowerCase();
         const resourceType = extension === 'pdf' ? 'PDF' : 'PRESENTATION';
         const formData = new FormData();
@@ -225,10 +274,12 @@ export default function InstructorSessionPage() {
         title: 'Escena creada',
         description: `Se guardó la escena "${newStageTitle}" con éxito.`,
       });
+      
       useOrchestratorStore.getState().syncState({ activeStageId: created.id });
       await fetchSession();
       useOrchestratorStore.getState().syncState({ activeStageId: created.id });
       await sessionsService.changeStage(id!, created.id);
+      
       setIsAddOpen(false);
       setNewStageTitle('');
       setNewStageType('BOARD');
@@ -251,8 +302,24 @@ export default function InstructorSessionPage() {
     sendMessage('gamification', 'POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
   };
 
-  const handleSpinner = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
   const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
+  
+  const handleLaunchQuiz = () => {
+    const activeQuestions = useQuizStore.getState().questions;
+    if (activeQuestions.length === 0 || !activeQuestions[0].id || activeQuestions[0].id.startsWith('q_')) {
+      toast({
+        title: 'Sin preguntas guardadas',
+        description: 'Debes agregar y autoguardar al menos una pregunta en el Quiz Builder antes de lanzarlo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    sendMessage('gamification', 'QUIZ_LAUNCHED', { question_id: activeQuestions[0].id });
+    toast({
+      title: '¡Quiz lanzado!',
+      description: 'La primera pregunta del cuestionario ha sido enviada a todos los estudiantes.',
+    });
+  };
 
   const handleSelectStageType = (stageType: string) => {
     setNewStageType(stageType);
@@ -271,10 +338,25 @@ export default function InstructorSessionPage() {
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-semibold text-sm truncate max-w-[200px]">{sessionInfo.title}</span>
+          <div className="flex items-center gap-1 ml-2">
+            <span className="text-xs font-mono bg-muted/20 px-2 py-0.5 rounded">Código: {sessionInfo.join_code || '---'}</span>
+            <button onClick={() => {
+              navigator.clipboard.writeText(sessionInfo.join_code ?? '');
+              toast({ title: 'Código copiado', description: 'El código de la clase se ha copiado al portapapeles.' });
+            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30">
+              <Copy className="w-3 h-3 text-primary" />
+            </button>
+            <button onClick={() => {
+              const link = `${window.location.origin}/session/${id}`;
+              navigator.clipboard.writeText(link);
+              toast({ title: 'Enlace copiado', description: 'El enlace de la clase se ha copiado al portapapeles.' });
+            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30">
+              <Link className="w-3 h-3 text-primary" />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Connection status */}
           <Badge variant="outline" className={cn(
             'text-xs gap-1.5',
             isConnected ? 'border-green-500/40 text-green-500' : 'border-destructive/40 text-destructive'
@@ -283,13 +365,11 @@ export default function InstructorSessionPage() {
             {isReconnecting ? 'Reconectando...' : isConnected ? 'Conectado' : 'Sin conexión'}
           </Badge>
 
-          {/* Live badge */}
           <Badge className="bg-red-500 text-white border-0 gap-1.5 text-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
             EN VIVO
           </Badge>
 
-          {/* Pause/Resume */}
           <Button
             variant="outline"
             size="sm"
@@ -335,8 +415,7 @@ export default function InstructorSessionPage() {
 
       {/* ── MAIN BODY ─────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-
-        {/* LEFT SIDEBAR — Stage list (220px) */}
+        {/* LEFT SIDEBAR — Stage list */}
         <aside className="w-[220px] border-r border-border bg-card flex flex-col shrink-0">
           <div className="p-3 border-b border-border flex gap-2">
             <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={goPrev} disabled={activeIdx <= 0}>
@@ -358,9 +437,7 @@ export default function InstructorSessionPage() {
                     whileHover={{ x: 2 }}
                     className={cn(
                       'group relative p-2.5 rounded-lg cursor-pointer border transition-all flex items-center justify-between',
-                      isActive
-                        ? 'border-primary bg-primary/10'
-                        : 'border-transparent hover:bg-muted'
+                      isActive ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted'
                     )}
                     onClick={async () => {
                       if (id && !isActive) {
@@ -391,7 +468,6 @@ export default function InstructorSessionPage() {
                         <p className="text-[10px] text-muted-foreground font-mono">{stage.type} · {stage.duration} min</p>
                       </div>
                     </div>
-                    {/* Delete stage button */}
                     <button
                       onClick={async (e) => {
                         e.stopPropagation();
@@ -419,21 +495,19 @@ export default function InstructorSessionPage() {
           </ScrollArea>
 
           <div className="p-3 border-t border-border">
-            <div className="space-y-2">
-              <Button
-                onClick={() => setIsAddOpen(true)}
-                variant="outline"
-                size="sm"
-                className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Agregar Escena
-              </Button>
-            </div>
+            <Button
+              onClick={() => setIsAddOpen(true)}
+              variant="outline"
+              size="sm"
+              className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Agregar Escena
+            </Button>
           </div>
         </aside>
 
-        {/* CENTER — Main canvas (flex-1) */}
+        {/* CENTER — Canvas Orquestador */}
         <main className="flex-1 relative bg-zinc-950 flex items-center justify-center overflow-hidden">
           <AnimatePresence mode="wait">
             {!activeStage ? (
@@ -448,7 +522,7 @@ export default function InstructorSessionPage() {
                 </div>
                 <h3 className="text-white text-lg font-semibold">Clase sin escenas</h3>
                 <p className="text-zinc-500 text-sm max-w-sm">
-                  Crea una escena (como una Pizarra o una Presentación) desde el panel izquierdo para comenzar a interactuar con tus estudiantes.
+                  Crea una escena (como una Pizarra o una Presentación) desde el panel izquierdo para comenzar a interactuar.
                 </p>
                 <Button 
                   onClick={() => setIsAddOpen(true)}
@@ -463,37 +537,30 @@ export default function InstructorSessionPage() {
               <CollaborativePresentationStage key={activeStage.id} sessionId={id ?? ''} role="instructor" sendMessage={sendMessage} />
             ) : activeStage.type === 'PDF' ? (
               <PDFStage key={activeStage.id} sessionId={id ?? ''} role="instructor" activeStageId={activeStage.id} />
+            ) : activeStage.type === 'QUIZ' || activeStage.type === 'GAME' ? (
+              <div className="w-full h-full overflow-y-auto bg-background text-foreground p-4">
+                <QuizBuilderPage sessionId={id ?? ''} />
+              </div>
             ) : (
               <motion.div
                 key={activeStageId}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
                 className="flex flex-col items-center gap-4 text-center"
               >
                 <div className="w-20 h-20 rounded-2xl card-gradient-blue flex items-center justify-center">
-                  {activeStage && (() => { const Icon = STAGE_ICONS[activeStage.type] ?? Zap; return <Icon className="w-10 h-10 text-white" />; })()}
+                  {(() => { const Icon = STAGE_ICONS[activeStage.type] ?? Zap; return <Icon className="w-10 h-10 text-white" />; })()}
                 </div>
                 <div>
-
                   <p className="text-white text-xl font-bold">{activeStage?.title}</p>
-                  <p className="text-zinc-400 text-sm mt-1">
-                    {activeStage?.type === 'PDF'
-                      ? 'Visor de PDF sincronizado'
-                      : activeStage?.type === 'QUIZ'
-                      ? 'Quiz en progreso'
-                      : 'Escena activa'}
-                  </p>
+                  <p className="text-zinc-400 text-sm mt-1">Escena activa sin vista remota</p>
                 </div>
-                <Badge className="bg-white/10 text-white border-white/20 text-xs">
-                  Vista del estudiante
-                </Badge>
+                <Badge className="bg-white/10 text-white border-white/20 text-xs">Vista del estudiante</Badge>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Reconnecting banner */}
           {isReconnecting && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur px-4 py-2 rounded-full border border-border text-sm text-muted-foreground flex items-center gap-2">
               <span className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -502,7 +569,7 @@ export default function InstructorSessionPage() {
           )}
         </main>
 
-        {/* RIGHT SIDEBAR — Controls (280px) */}
+        {/* RIGHT SIDEBAR — Controls */}
         <aside className="w-[280px] border-l border-border bg-card flex flex-col shrink-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <div className="p-2 border-b border-border shrink-0">
@@ -519,7 +586,6 @@ export default function InstructorSessionPage() {
 
             {/* CLASE TAB */}
             <TabsContent value="clase" className="flex-1 overflow-y-auto m-0 p-3 space-y-4 scrollbar-thin">
-              {/* Gamification */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gamificación</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -531,16 +597,23 @@ export default function InstructorSessionPage() {
                     <Timer className="w-5 h-5 text-accent" />
                     Timer
                   </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-1 text-xs col-span-2">
+                  <Button variant="outline" className="h-16 flex-col gap-1 text-xs col-span-2 hover:bg-primary/5 hover:text-primary" onClick={handleLaunchQuiz}>
                     <Trophy className="w-5 h-5 text-yellow-500" />
                     Lanzar Quiz
                   </Button>
                 </div>
               </div>
 
+              <RouletteWheel
+                open={isRouletteOpen}
+                onClose={() => setIsRouletteOpen(false)}
+                participants={participants.map(p => ({ id: p.id, name: p.name }))}
+                onResult={(winnerId) => {
+                  sendMessage('gamification', 'ROULETTE_RESULT', { participant_id: winnerId });
+                }}
+              />
               <Separator />
 
-              {/* Points */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Asignar Puntos</p>
                 <div className="space-y-2">
@@ -611,7 +684,7 @@ export default function InstructorSessionPage() {
         </aside>
       </div>
 
-      {/* ── BOTTOM TOOLBAR ─────────────────────────────── */}
+      {/* ── FOOTER TOOLBAR ─────────────────────────────── */}
       <footer className="h-13 border-t border-border bg-card/80 backdrop-blur flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground font-medium">Herramientas:</span>
@@ -621,20 +694,52 @@ export default function InstructorSessionPage() {
               Puntero Láser
             </Button>
           )}
-          {activeStage?.type === 'PDF' && (
+          {(activeStage?.type === 'PDF' || activeStage?.type === 'PRESENTATION') && (
             <div className="flex items-center gap-1.5">
               <Button variant="outline" size="sm" className="h-8 text-xs w-8 p-0">‹</Button>
-              <span className="text-xs font-mono text-muted-foreground">Pág 1/10</span>
+              <span className="text-xs font-mono text-muted-foreground">Sincronizado</span>
               <Button variant="outline" size="sm" className="h-8 text-xs w-8 p-0">›</Button>
             </div>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-          >
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-2" onClick={() => setIsJoinOpen(true)}>
+            <UserPlus className="w-3.5 h-3.5" />
+            Unirse
+          </Button>
+
+          <Dialog open={isJoinOpen} onOpenChange={setIsJoinOpen}>
+            <DialogContent className="sm:max-w-[400px] bg-zinc-950 text-white border-zinc-800 shadow-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-semibold">Unirse a una clase</DialogTitle>
+              </DialogHeader>
+              <div className="p-4">
+                <Input placeholder="Ingresa el código de la clase" value={joinCode} onChange={e => setJoinCode(e.target.value)} className="mb-4" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setIsJoinOpen(false)}>Cancelar</Button>
+                  <Button onClick={async () => {
+                    if (!joinCode.trim()) {
+                      toast({ title: 'Código vacío', description: 'Por favor ingresa un código de clase.', variant: 'destructive' });
+                      return;
+                    }
+                    try {
+                      const session = await sessionsService.joinByCode(joinCode.trim());
+                      toast({ title: 'Unido', description: `Te has unido a la clase ${session.title}.` });
+                      navigate(`/session/${session.id}`);
+                    } catch (err: any) {
+                      console.error('Error joining class:', err);
+                      toast({ title: 'Error', description: 'Código inválido o no autorizado.', variant: 'destructive' });
+                    } finally {
+                      setIsJoinOpen(false);
+                      setJoinCode('');
+                    }
+                  }}>Unirse</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
             <MessageCircle className="w-3.5 h-3.5" />
             Chat
           </Button>
@@ -681,8 +786,7 @@ export default function InstructorSessionPage() {
               </label>
               <Input
                 type="number"
-                min={1}
-                max={120}
+                min={1} max={120}
                 value={newStageDuration}
                 onChange={(e) => setNewStageDuration(e.target.value)}
                 className="bg-zinc-900 border-zinc-800 text-white focus-visible:ring-primary focus-visible:border-primary w-24 font-mono"
@@ -694,137 +798,83 @@ export default function InstructorSessionPage() {
                 Funcionalidad / Tipo de Escena
               </label>
               <div className="grid grid-cols-2 gap-3">
-                {/* BOARD (Pizarra) */}
+                {/* BOARD */}
                 <div
                   onClick={() => handleSelectStageType('BOARD')}
                   className={cn(
                     'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
-                    newStageType === 'BOARD'
-                      ? 'border-primary bg-primary/10 text-white'
-                      : 'border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60'
+                    newStageType === 'BOARD' ? 'border-primary bg-primary/10 text-white' : 'border-zinc-800 bg-zinc-900/40 text-zinc-400'
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <div className={cn(
-                      'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-                      newStageType === 'BOARD' ? 'bg-primary text-white' : 'bg-zinc-800 text-zinc-400'
-                    )}>
+                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'BOARD' ? 'bg-primary text-white' : 'bg-zinc-800')}>
                       <Zap className="w-4 h-4" />
                     </div>
                     <span className="font-semibold text-sm text-white">Pizarra</span>
                   </div>
-                  <p className="text-[11px] leading-snug text-zinc-400">
-                    Lienzo digital interactivo para dibujar y escribir en tiempo real.
-                  </p>
-                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400 hover:bg-green-500/20 border-0 text-[9px] px-1.5 py-0">
-                    Listo
-                  </Badge>
+                  <p className="text-[11px] leading-snug text-zinc-400">Lienzo digital interactivo colaborativo.</p>
+                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400 border-0 text-[9px] px-1.5 py-0">Listo</Badge>
                 </div>
 
-                {/* PDF (Visor de PDF) */}
+                {/* VISOR PDF */}
                 <div
                   onClick={() => handleSelectStageType('PDF')}
                   className={cn(
-                    'p-3.5 rounded-xl border-2 flex flex-col gap-2 relative overflow-hidden transition-all duration-200',
-                    newStageType === 'PDF'
-                      ? 'border-primary bg-primary/10 text-white cursor-pointer'
-                      : 'border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 cursor-pointer'
+                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
+                    newStageType === 'PDF' ? 'border-primary bg-primary/10 text-white' : 'border-zinc-800 bg-zinc-900/40 text-zinc-400'
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <div className={cn(
-                      'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-                      newStageType === 'PDF' ? 'bg-primary text-white' : 'bg-zinc-800 text-zinc-400'
-                    )}>
+                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'PDF' ? 'bg-primary text-white' : 'bg-zinc-800')}>
                       <FolderOpen className="w-4 h-4" />
                     </div>
-                    <span className={cn('font-semibold text-sm', newStageType === 'PDF' ? 'text-white' : 'text-zinc-500')}>
-                      Visor PDF
-                    </span>
+                    <span className="font-semibold text-sm text-white">Visor PDF</span>
                   </div>
-                  <p className={cn('text-[11px] leading-snug', newStageType === 'PDF' ? 'text-zinc-300' : 'text-zinc-600')}>
-                    Presentaciones, diapositivas y documentos compartidos.
-                  </p>
-                  <Badge className={cn(
-                    'absolute top-2 right-2 border-0 text-[9px] px-1.5 py-0',
-                    newStageType === 'PDF' ? 'bg-primary/20 text-primary-foreground' : 'bg-zinc-800 text-zinc-500 hover:bg-zinc-800'
-                  )}>
-                    {newStageType === 'PDF' ? 'Seleccionado' : 'Disponible'}
-                  </Badge>
+                  <p className="text-[11px] leading-snug text-zinc-400">Presentaciones y diapositivas compartidas.</p>
+                  <Badge className="absolute top-2 right-2 bg-primary/20 text-primary border-0 text-[9px] px-1.5 py-0">PDF</Badge>
                 </div>
 
-                {/* QUIZ (Quiz Evaluativo) - Disabled */}
+                {/* QUIZ */}
                 <div
-                  className="p-3.5 rounded-xl border-2 border-zinc-900 bg-zinc-900/20 text-zinc-600 flex flex-col gap-2 relative cursor-not-allowed"
+                  onClick={() => handleSelectStageType('QUIZ')}
+                  className={cn(
+                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
+                    newStageType === 'QUIZ' ? 'border-primary bg-primary/10 text-white' : 'border-zinc-800 bg-zinc-900/40 text-zinc-400'
+                  )}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-zinc-950 flex items-center justify-center shrink-0 text-zinc-600">
+                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'QUIZ' ? 'bg-primary text-white' : 'bg-zinc-800')}>
                       <Trophy className="w-4 h-4" />
                     </div>
-                    <span className="font-semibold text-sm text-zinc-500">Quiz</span>
+                    <span className="font-semibold text-sm text-white">Quiz</span>
                   </div>
-                  <p className="text-[11px] leading-snug text-zinc-600">
-                    Encuestas y cuestionarios rápidos de opción múltiple.
-                  </p>
-                  <Badge className="absolute top-2 right-2 bg-zinc-800 text-zinc-500 hover:bg-zinc-800 border-0 text-[9px] px-1.5 py-0">
-                    Próximamente
-                  </Badge>
-                </div>
-
-                {/* GAME (Trivia / Juego) - Disabled */}
-                <div
-                  className="p-3.5 rounded-xl border-2 border-zinc-900 bg-zinc-900/20 text-zinc-600 flex flex-col gap-2 relative cursor-not-allowed"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-zinc-950 flex items-center justify-center shrink-0 text-zinc-600">
-                      <Dices className="w-4 h-4" />
-                    </div>
-                    <span className="font-semibold text-sm text-zinc-500">Trivia</span>
-                  </div>
-                  <p className="text-[11px] leading-snug text-zinc-600">
-                    Preguntas gamificadas para incentivar la participación.
-                  </p>
-                  <Badge className="absolute top-2 right-2 bg-zinc-800 text-zinc-500 hover:bg-zinc-800 border-0 text-[9px] px-1.5 py-0">
-                    Próximamente
-                  </Badge>
+                  <p className="text-[11px] leading-snug text-zinc-400">Cuestionarios interactivos estilo Kahoot.</p>
+                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400 border-0 text-[9px] px-1.5 py-0">Listo</Badge>
                 </div>
               </div>
 
-              {newStageType === 'PDF' && (
-                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3">
+              {(newStageType === 'PDF' || newStageType === 'PRESENTATION') && (
+                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3">
                   <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">
                     Archivo PDF / PPTX de la escena
                   </label>
                   <Input
                     type="file"
-                    accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    accept=".pdf,.ppt,.pptx"
                     onChange={(e) => setPptFile(e.target.files?.[0] ?? null)}
-                    className="bg-zinc-900 border-zinc-800 text-white focus-visible:ring-primary focus-visible:border-primary file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1 file:text-xs file:font-semibold file:text-primary-foreground"
+                    className="bg-zinc-900 border-zinc-800 text-white file:bg-primary file:text-primary-foreground file:text-xs file:rounded-md file:border-0"
                   />
-                  <p className="text-xs text-zinc-400">
-                    Al crear esta escena, el archivo se asociará a la diapositiva PDF para que se muestre en el visor.
-                  </p>
-                  {pptFile && (
-                    <p className="text-xs text-primary truncate">Seleccionado: {pptFile.name}</p>
-                  )}
+                  {pptFile && <p className="text-xs text-primary truncate">Seleccionado: {pptFile.name}</p>}
                 </div>
               )}
             </div>
           </div>
 
           <DialogFooter className="mt-4 gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setIsAddOpen(false)}
-              className="border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white"
-            >
+            <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-zinc-800 text-zinc-400">
               Cancelar
             </Button>
-            <Button
-              onClick={handleCreateStage}
-              disabled={isCreatingStage || !newStageTitle.trim()}
-              className="sidebar-gradient border-0 text-white font-semibold"
-            >
+            <Button onClick={handleCreateStage} disabled={isCreatingStage || !newStageTitle.trim()} className="sidebar-gradient border-0 text-white">
               {isCreatingStage ? 'Creando...' : 'Crear Escena'}
             </Button>
           </DialogFooter>

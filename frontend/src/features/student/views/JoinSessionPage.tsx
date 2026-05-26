@@ -16,7 +16,7 @@ export default function JoinSessionPage() {
   const { toast } = useToast();
 
   const handleJoin = async () => {
-    if (code.trim().length < 4) {
+    if (code.trim().length !== 6) {
       toast({ title: 'Código inválido', description: 'Ingresa el código de 6 caracteres de tu clase.', variant: 'destructive' });
       return;
     }
@@ -24,8 +24,21 @@ export default function JoinSessionPage() {
     try {
       const session = await sessionsService.joinByCode(code.trim().toUpperCase());
       navigate(`/session/${session.id}/student`);
-    } catch {
-      toast({ title: 'Código no encontrado', description: 'Verifica el código con tu instructor.', variant: 'destructive' });
+    } catch (err: any) {
+      let errorMsg = 'Verifica el código con tu instructor.';
+      const data = err.response?.data;
+      if (data) {
+        if (typeof data === 'string') {
+          errorMsg = data;
+        } else if (data.join_code) {
+          errorMsg = Array.isArray(data.join_code) ? data.join_code[0] : data.join_code;
+        } else if (data.non_field_errors) {
+          errorMsg = Array.isArray(data.non_field_errors) ? data.non_field_errors[0] : data.non_field_errors;
+        } else if (data.detail) {
+          errorMsg = data.detail;
+        }
+      }
+      toast({ title: 'Error al unirse', description: errorMsg, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -81,7 +94,7 @@ export default function JoinSessionPage() {
             <Button
               className="w-full h-12 text-base font-semibold sidebar-gradient border-0 text-white hover:opacity-90"
               onClick={handleJoin}
-              disabled={isLoading || code.length < 4}
+              disabled={isLoading || code.length !== 6}
             >
               {isLoading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
               Entrar a la Clase
