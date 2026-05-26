@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
-  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2, Upload
+  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -420,18 +420,6 @@ export default function InstructorSessionPage() {
 
           <div className="p-3 border-t border-border">
             <div className="space-y-2">
-              <Button
-                onClick={() => {
-                  setNewStageType('PDF');
-                  setIsAddOpen(true);
-                }}
-                variant="outline"
-                size="sm"
-                className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Nueva escena PDF
-              </Button>
               <Button
                 onClick={() => setIsAddOpen(true)}
                 variant="outline"
