@@ -2,11 +2,21 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 import { useChatStore } from '@/features/chat/store/chatStore';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
+import { authService } from '@/shared/services/authService';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 
 const CHANNELS = ['sessions', 'chat', 'board', 'presentations', 'gamification'] as const;
 type ChannelType = typeof CHANNELS[number];
+
+function getJwtExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
 export function useWebSocket(sessionId: string | null, role: 'student' | 'instructor' = 'student') {
   const [isConnected, setIsConnected] = useState(false);
@@ -21,6 +31,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
   const reconnectAttempts = useRef(0);
   const maxReconnectInterval = 30000;
   const timeoutIds = useRef<number[]>([]);
+  const connectInFlight = useRef(false);
 
   const setSceneState = useSceneStore((state) => state.setSceneState);
   const addChatMessage = useChatStore((state) => state.addMessage);
@@ -34,6 +45,25 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
   const handleWsEvent = useCallback((channel: ChannelType, data: any) => {
     const { event, payload } = data;
     console.log(`[WS Event] [${channel}]`, event, payload);
+
+    const upsertStage = (stageId: string, stageType: string, stageTitle?: string) => {
+      const store = useOrchestratorStore.getState();
+      const exists = store.stages.some((stage) => stage.id === stageId);
+      if (exists) return;
+
+      const nextStages = [
+        ...store.stages,
+        {
+          id: stageId,
+          title: stageTitle || stageType,
+          type: stageType,
+          duration: 10,
+          completed: false,
+        },
+      ];
+
+      syncOrchestrator({ stages: nextStages });
+    };
 
     switch (event) {
       case 'SESSION_STATE':
@@ -63,6 +93,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         break;
       case 'STAGE_CHANGED':
         setSceneState({ activeScene: payload.type, stageData: payload.data });
+        upsertStage(payload.stage_id, payload.type, payload.data?.title);
         useOrchestratorStore.getState().setActiveStage(payload.stage_id);
         break;
       case 'PARTICIPANT_JOINED':
@@ -158,12 +189,23 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
     timeoutIds.current.push(id);
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!sessionId || sessionId === 'undefined' || sessionId === 'null') return;
-    
-    const token = localStorage.getItem('tesseract_access_token');
+
+    if (connectInFlight.current) return;
+    connectInFlight.current = true;
+
+    let token = localStorage.getItem('tesseract_access_token');
+    const expiry = token ? getJwtExpiry(token) : null;
+    const isExpired = !expiry || expiry <= Date.now() + 30_000;
+
+    if (!token || isExpired) {
+      token = await authService.refreshAccessToken();
+    }
+
     if (!token) {
       console.warn('No JWT access token found, WebSocket connection deferred');
+      connectInFlight.current = false;
       return;
     }
 
@@ -215,10 +257,12 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
       };
     });
 
+    connectInFlight.current = false;
+
   }, [sessionId, attemptReconnect, handleWsEvent]);
 
   useEffect(() => {
-    connect();
+    void connect();
     return () => {
       timeoutIds.current.forEach(clearTimeout);
       CHANNELS.forEach((channel) => {
