@@ -123,8 +123,6 @@ class JoinSessionSerializer(serializers.Serializer):
             raise serializers.ValidationError("Código de sesión inválido.")
         if session.state == SessionState.ENDED:
             raise serializers.ValidationError("Esta sesión ya ha finalizado.")
-        if session.state == SessionState.SCHEDULED:
-            raise serializers.ValidationError("Esta sesión aún no ha comenzado.")
         self.session = session
         return value.upper()
 

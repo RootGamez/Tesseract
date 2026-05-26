@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, Trophy, X } from 'lucide-react';
+import { MessageCircle, Trophy, X, Clock } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
@@ -52,7 +52,23 @@ export default function StudentSessionPage() {
       {/* ── MAIN SCENE ──────────────────────────────── */}
       <main className="flex-1 relative flex items-center justify-center overflow-hidden">
         <AnimatePresence mode="wait">
-          {activeScene === 'BOARD' ? (
+          {!activeStageId ? (
+            <motion.div
+              key="waiting"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center p-6"
+            >
+              <div className="w-20 h-20 rounded-2xl bg-zinc-900 border border-zinc-800/80 flex items-center justify-center mx-auto mb-6 shadow-2xl animate-pulse">
+                <Clock className="w-10 h-10 text-primary" />
+              </div>
+              <h2 className="text-white text-2xl font-bold tracking-tight">Sala de Espera</h2>
+              <p className="text-zinc-400 text-sm mt-2 max-w-xs mx-auto">
+                La clase aún no ha comenzado o el instructor no ha activado ninguna escena. Por favor, espera un momento.
+              </p>
+            </motion.div>
+          ) : activeScene === 'BOARD' ? (
             <BoardWrapper key={activeStageId} role="student" sendMessage={sendMessage} />
           ) : (
             <motion.div

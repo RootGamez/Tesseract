@@ -126,9 +126,9 @@ class Stage(BaseModel):
 # ── Live Session ───────────────────────────────────────────────────────────────
 
 def _generate_join_code() -> str:
-    """Generate a 6-character alphanumeric join code (RF-AUTH-02)."""
-    chars = getattr(settings, "SESSION_JOIN_CODE_CHARS", "ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-    length = getattr(settings, "SESSION_JOIN_CODE_LENGTH", 6)
+    """Generate a 6-digit numeric join code (RF-AUTH-02)."""
+    chars = "0123456789"
+    length = 6
     return "".join(random.choices(chars, k=length))
 
 

@@ -57,8 +57,14 @@ export const sessionsService = {
     return data;
   },
   async joinByCode(code: string): Promise<LiveSession> {
-    const { data } = await apiClient.post<{ session: LiveSession }>('/api/v1/sessions/join/', { code });
+    // Backend expects POST with field `join_code` (uppercase)
+    const payload = { join_code: code.trim().toUpperCase() };
+    const { data } = await apiClient.post<{ session: LiveSession }>('/api/v1/sessions/join/', payload);
     return data.session;
+  },
+  async getParticipants(sessionId: string): Promise<any[]> {
+    const { data } = await apiClient.get<any[]>(`/api/v1/sessions/live/${sessionId}/participants/`);
+    return data;
   },
   async addStage(templateId: string, payload: { title: string; stage_type: string; duration_estimated_minutes: number }): Promise<any> {
     const { data } = await apiClient.post(`/api/v1/sessions/templates/${templateId}/stages/add/`, payload);

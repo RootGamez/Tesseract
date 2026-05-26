@@ -152,8 +152,35 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         break;
 
       case 'PARTICIPANT_JOINED':
+        {
+          const state = useOrchestratorStore.getState();
+          const exists = state.participants.some(p => p.id === payload.participant_id);
+          let newParticipants = [...state.participants];
+          if (exists) {
+            newParticipants = newParticipants.map(p =>
+              p.id === payload.participant_id ? { ...p, online: true } : p
+            );
+          } else {
+            newParticipants.push({
+              id: payload.participant_id,
+              name: payload.display_name,
+              points: 0,
+              online: true,
+            });
+          }
+          state.syncState({ participants: newParticipants });
+        }
+        break;
+
       case 'PARTICIPANT_LEFT':
-        break; // Handled via REST polling
+        {
+          const state = useOrchestratorStore.getState();
+          const newParticipants = state.participants.map(p =>
+            p.id === payload.participant_id ? { ...p, online: false } : p
+          );
+          state.syncState({ participants: newParticipants });
+        }
+        break;
 
       case 'BOARD_UPDATE':
         window.dispatchEvent(new CustomEvent('board-update', { detail: payload }));

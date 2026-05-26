@@ -4,7 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
-  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2
+  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2,
+  Copy, Link, UserPlus
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -53,6 +54,8 @@ export default function InstructorSessionPage() {
 
   const [templateId, setTemplateId] = useState<string>('');
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
   const [newStageTitle, setNewStageTitle] = useState('');
   const [newStageType, setNewStageType] = useState('BOARD');
   const [newStageDuration, setNewStageDuration] = useState('10');
@@ -93,13 +96,37 @@ export default function InstructorSessionPage() {
         duration: s.duration_estimated_minutes,
         completed: false,
       }));
+
+      // Fetch active participants
+      let mappedParticipants: any[] = [];
+      try {
+        const participantsList = await sessionsService.getParticipants(id);
+        mappedParticipants = (participantsList || []).map((p: any) => ({
+          id: p.id,
+          name: p.display_name,
+          points: p.points,
+          online: p.connection_status === 'ONLINE',
+        }));
+      } catch (err) {
+        console.error('Error fetching participants:', err);
+      }
+
+      // Auto-initialize current stage on backend if null
+      if (!session.current_stage && mappedStages[0]?.id) {
+        sessionsService.changeStage(id, mappedStages[0].id).catch(err => {
+          console.error('Failed to auto-initialize stage:', err);
+        });
+      }
+
       useOrchestratorStore.getState().syncState({
         sessionInfo: {
           title: session.title,
           duration: session.duration_seconds ? Math.round(session.duration_seconds / 60) : 60,
+          join_code: session.join_code ?? '',
         },
         stages: mappedStages,
         activeStageId: session.current_stage?.id || (mappedStages[0]?.id || ''),
+        participants: mappedParticipants,
       });
       setTemplateId(session.template_id || '');
       setSessionState(session.state === 'PAUSED' ? 'PAUSED' : 'LIVE');
@@ -236,7 +263,7 @@ export default function InstructorSessionPage() {
     sendMessage('gamification', 'POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
   };
 
-  const handleSpinnerResult = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
+
   const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
   const handleLaunchQuiz = () => {
     const activeQuestions = useQuizStore.getState().questions;
@@ -268,6 +295,22 @@ export default function InstructorSessionPage() {
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-semibold text-sm truncate max-w-[200px]">{sessionInfo.title}</span>
+          <div className="flex items-center gap-1 ml-2">
+            <span className="text-xs font-mono bg-muted/20 px-2 py-0.5 rounded">Código: {sessionInfo.join_code || '---'}</span>
+            <button onClick={() => {
+              navigator.clipboard.writeText(sessionInfo.join_code ?? '');
+              toast({ title: 'Código copiado', description: 'El código de la clase se ha copiado al portapapeles.', variant: 'default' });
+            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30">
+              <Copy className="w-3 h-3 text-primary" />
+            </button>
+            <button onClick={() => {
+              const link = `${window.location.origin}/session/${id}`;
+              navigator.clipboard.writeText(link);
+              toast({ title: 'Enlace copiado', description: 'El enlace de la clase se ha copiado al portapapeles.', variant: 'default' });
+            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30">
+              <Link className="w-3 h-3 text-primary" />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -630,6 +673,55 @@ export default function InstructorSessionPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+            {/* Join class button */}
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-2" onClick={() => setIsJoinOpen(true)}>
+              <UserPlus className="w-3.5 h-3.5" />
+              Unirse
+            </Button>
+            {/* Join Class Dialog */}
+            <Dialog open={isJoinOpen} onOpenChange={setIsJoinOpen}>
+              <DialogContent className="sm:max-w-[400px] bg-zinc-950 text-white border-zinc-800 shadow-2xl">
+                <DialogHeader>
+                  <DialogTitle className="text-lg font-semibold">Unirse a una clase</DialogTitle>
+                </DialogHeader>
+                <div className="p-4">
+                  <Input placeholder="Ingresa el código de la clase" value={joinCode} onChange={e => setJoinCode(e.target.value)} className="mb-4" />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setIsJoinOpen(false)}>Cancelar</Button>
+                    <Button onClick={async () => {
+                      if (!joinCode.trim()) {
+                        toast({ title: 'Código vacío', description: 'Por favor ingresa un código de clase.', variant: 'destructive' });
+                        return;
+                      }
+                      try {
+                        const session = await sessionsService.joinByCode(joinCode.trim());
+                        toast({ title: 'Unido', description: `Te has unido a la clase ${session.title}.`, variant: 'default' });
+                        navigate(`/session/${session.id}`);
+                      } catch (err: any) {
+                        console.error('Error joining class:', err);
+                        let errorMsg = 'Código inválido o no autorizado.';
+                        const data = err.response?.data;
+                        if (data) {
+                          if (typeof data === 'string') {
+                            errorMsg = data;
+                          } else if (data.join_code) {
+                            errorMsg = Array.isArray(data.join_code) ? data.join_code[0] : data.join_code;
+                          } else if (data.non_field_errors) {
+                            errorMsg = Array.isArray(data.non_field_errors) ? data.non_field_errors[0] : data.non_field_errors;
+                          } else if (data.detail) {
+                            errorMsg = data.detail;
+                          }
+                        }
+                        toast({ title: 'Error', description: errorMsg, variant: 'destructive' });
+                      } finally {
+                        setIsJoinOpen(false);
+                        setJoinCode('');
+                      }
+                    }}>Unirse</Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           <Button
             variant="outline"
             size="sm"
