@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -59,7 +59,7 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
     setValue,
     watch,
     reset,
-    formState: { errors, isDirty },
+    formState: { errors },
   } = useForm<QuizFormValues>({
     resolver: zodResolver(quizSchema),
     defaultValues: {
@@ -90,23 +90,82 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
     }
   }, [sessionId, loadSessionQuestions, reset]);
 
+  // We can track the last saved payload in a ref to avoid infinite save loops
+  // and prevent unmounting/blinking caused by calling reset() on every save.
+  const lastSavedPayloadRef = useRef<string>('');
+  const isInitializedRef = useRef(false);
+
+  // Reset initialization flag when sessionId changes
+  useEffect(() => {
+    isInitializedRef.current = false;
+  }, [sessionId]);
+
+  // Initialize the ref when the store questions are loaded
+  useEffect(() => {
+    if (questions && questions.length > 0 && !isInitializedRef.current) {
+      lastSavedPayloadRef.current = JSON.stringify({
+        quizTitle,
+        questions: questions.map((q) => ({
+          id: q.id,
+          question_text: q.question_text,
+          options: q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.is_correct })),
+        })),
+      });
+      isInitializedRef.current = true;
+    }
+  }, [questions, quizTitle]);
+
   // Watch form changes for passive debounced synchronization
   const formValues = watch();
 
   useEffect(() => {
-    // Only subscribe and sync if the form has been modified
-    if (!isDirty) return;
+    if (!formValues.quizTitle || !formValues.questions) return;
+
+    // Check if the current content is different from the last saved payload
+    const currentPayload = JSON.stringify({
+      quizTitle: formValues.quizTitle,
+      questions: formValues.questions.map((q: any) => ({
+        id: q?.id,
+        question_text: q?.question_text || '',
+        options: (q?.options || []).map((o: any) => ({ id: o?.id, text: o?.text || '', is_correct: o?.is_correct === true })),
+      })),
+    });
+
+    if (currentPayload === lastSavedPayloadRef.current) {
+      return;
+    }
 
     const timer = setTimeout(() => {
       // Push state to Zustand and trigger real or mock save to Django API
-      if (formValues.quizTitle && formValues.questions) {
-        updateQuizState(formValues.quizTitle, formValues.questions as Question[]);
-        saveQuizDraft(formValues.quizTitle, formValues.questions as Question[], sessionId);
-      }
+      updateQuizState(formValues.quizTitle, formValues.questions as Question[]);
+      saveQuizDraft(formValues.quizTitle, formValues.questions as Question[], sessionId).then(() => {
+        const freshQuestions = useQuizStore.getState().questions;
+        const freshTitle = useQuizStore.getState().quizTitle;
+
+        // Quietly update the ID values in the form state (without marking the form dirty)
+        freshQuestions.forEach((q, qIdx) => {
+          if (formValues.questions?.[qIdx]) {
+            setValue(`questions.${qIdx}.id`, q.id, { shouldDirty: false, shouldValidate: false });
+            q.options.forEach((o, oIdx) => {
+              setValue(`questions.${qIdx}.options.${oIdx}.id`, o.id, { shouldDirty: false, shouldValidate: false });
+            });
+          }
+        });
+
+        // Update the last saved ref with the newly saved content (with real UUIDs)
+        lastSavedPayloadRef.current = JSON.stringify({
+          quizTitle: freshTitle,
+          questions: freshQuestions.map((q) => ({
+            id: q.id,
+            question_text: q.question_text,
+            options: q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.is_correct })),
+          })),
+        });
+      });
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [formValues, isDirty, updateQuizState, saveQuizDraft, sessionId]);
+  }, [formValues, updateQuizState, saveQuizDraft, sessionId, setValue]);
 
   // Handle Drag & Drop reordering
   const sensors = useSensors(
@@ -168,6 +227,7 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
         quizTitle: freshStore.quizTitle,
         questions: freshStore.questions,
       });
+      isInitializedRef.current = false;
     }
   };
 

@@ -6,17 +6,21 @@ import { Topbar } from '@/shared/components/layout/Topbar';
 export default function QuizBuilderPage({ sessionId }: { sessionId?: string }) {
   const { currentView, setView, questions } = useQuizStore();
 
+  const isEmbedded = !!sessionId;
+
   return (
-    <div className="animate-fade-in min-h-screen flex flex-col bg-background">
+    <div className={`animate-fade-in flex flex-col ${isEmbedded ? 'w-full h-full bg-transparent' : 'min-h-screen bg-background'}`}>
       {currentView === 'editor' ? (
         <>
           {/* Topbar navigation */}
-          <Topbar 
-            title="Creador de Quizzes" 
-            subtitle="Diseña preguntas dinámicas e interactivas estilo Kahoot" 
-          />
+          {!isEmbedded && (
+            <Topbar 
+              title="Creador de Quizzes" 
+              subtitle="Diseña preguntas dinámicas e interactivas estilo Kahoot" 
+            />
+          )}
           {/* Page content padding in editor mode */}
-          <div className="p-6 max-w-6xl w-full mx-auto flex-1 pb-16">
+          <div className={isEmbedded ? 'w-full p-2 flex-1' : 'p-6 max-w-6xl w-full mx-auto flex-1 pb-16'}>
             <QuizEditor sessionId={sessionId} />
           </div>
         </>

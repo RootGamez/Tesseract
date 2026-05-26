@@ -230,8 +230,9 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
           onChange={onChange}
           onPointerUpdate={onPointerUpdate}
           viewModeEnabled={isViewMode}
-          theme="dark"
-          gridModeEnabled={true}
+          theme="light"
+          gridModeEnabled={false}
+          initialData={{ appState: { viewBackgroundColor: "#ffffff" } }}
         />
       </div>
     );
