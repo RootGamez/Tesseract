@@ -38,6 +38,12 @@ def upload_file(file_obj, object_key: str, content_type: str = "application/octe
     bucket = settings.AWS_STORAGE_BUCKET_NAME
 
     try:
+        # Ensure bucket exists
+        try:
+            client.head_bucket(Bucket=bucket)
+        except Exception:
+            client.create_bucket(Bucket=bucket)
+
         client.upload_fileobj(
             file_obj,
             bucket,
