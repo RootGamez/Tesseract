@@ -3,6 +3,7 @@ Resources views — RF-RES-01, RF-RES-02
 """
 import uuid
 import os
+from django.http import StreamingHttpResponse
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,7 +12,7 @@ from rest_framework.parsers import MultiPartParser
 from core.permissions import IsInstructor, IsParticipantOrInstructor
 from .models import Resource, Snippet
 from .serializers import ResourceSerializer, ResourceUploadSerializer, SnippetSerializer
-from .storage import upload_file, generate_presigned_url
+from .storage import upload_file, generate_presigned_url, _get_s3_client
 
 
 class ResourceListView(generics.ListAPIView):
@@ -21,6 +22,28 @@ class ResourceListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Resource.objects.filter(session_id=self.kwargs["session_id"])
+
+
+class ResourceDownloadView(APIView):
+    """GET /api/v1/resources/<resource_id>/download/"""
+    permission_classes = [IsParticipantOrInstructor]
+
+    def get(self, request, resource_id):
+        resource = Resource.objects.select_related("session").get(pk=resource_id)
+        if not request.user.is_authenticated:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if resource.session.instructor_id != request.user.id:
+            participant = resource.session.participants.filter(user=request.user).exists()
+            if not participant:
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        client = _get_s3_client()
+        obj = client.get_object(Bucket=os.environ.get("MINIO_BUCKET_NAME", "tesseract"), Key=resource.file_key)
+        body = obj["Body"]
+        response = StreamingHttpResponse(body.iter_chunks(), content_type=resource.content_type or "application/octet-stream")
+        response["Content-Disposition"] = f'inline; filename="{resource.name}"'
+        return response
 
 
 class ResourceUploadView(APIView):
