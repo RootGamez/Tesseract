@@ -1,3 +1,4 @@
+import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,7 +18,7 @@ import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { sessionsService } from '@/shared/services/sessionsService';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
-import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
+import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import QuizBuilderPage from '@/features/quiz/views/QuizBuilderPage';
 import { useQuizStore } from '@/features/quiz/store/useQuizStore';
 import {
@@ -44,6 +45,8 @@ export default function InstructorSessionPage() {
   const { stages, activeStageId, participants, sessionInfo } = useOrchestratorStore();
   const { isConnected, isReconnecting, sendMessage } = useWebSocket(id ?? null, 'instructor');
   const [activeTab, setActiveTab] = useState('clase');
+  const [isRouletteOpen, setIsRouletteOpen] = useState(false);
+  const handleSpinner = () => setIsRouletteOpen(true);
   const [points, setPoints] = useState('10');
   const [selectedParticipant, setSelectedParticipant] = useState('');
   const [sessionState, setSessionState] = useState<'LIVE' | 'PAUSED'>('LIVE');
@@ -233,7 +236,7 @@ export default function InstructorSessionPage() {
     sendMessage('gamification', 'POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
   };
 
-  const handleSpinner = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
+  const handleSpinnerResult = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
   const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
   const handleLaunchQuiz = () => {
     const activeQuestions = useQuizStore.getState().questions;
@@ -526,7 +529,16 @@ export default function InstructorSessionPage() {
                 </div>
               </div>
 
-              <Separator />
+                <RouletteWheel
+                  open={isRouletteOpen}
+                  onClose={() => setIsRouletteOpen(false)}
+                  participants={participants.map(p => ({ id: p.id, name: p.name }))}
+                  onResult={(winnerId) => {
+                    // Send result to backend or handle locally
+                    sendMessage('gamification', 'ROULETTE_RESULT', { participant_id: winnerId });
+                  }}
+                />
+                <Separator />
 
               {/* Points */}
               <div>
