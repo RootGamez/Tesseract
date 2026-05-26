@@ -17,6 +17,7 @@ class Resource(BaseModel):
 
     class ResourceType(models.TextChoices):
         PDF = "PDF", "PDF"
+        PRESENTATION = "PRESENTATION", "Presentación"
         IMAGE = "IMAGE", "Imagen"
         ZIP = "ZIP", "ZIP / Comprimido"
         CODE = "CODE", "Código fuente"
@@ -42,7 +43,7 @@ class Resource(BaseModel):
     )
     name = models.CharField(max_length=500)
     resource_type = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=ResourceType.choices,
         default=ResourceType.OTHER,
     )

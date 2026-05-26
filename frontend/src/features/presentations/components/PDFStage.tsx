@@ -5,7 +5,6 @@ interface PDFStageProps {
   sessionId: string;
   role: 'student' | 'instructor';
   activeStageId?: string;
-  sendMessage: (channel: string, event: string, payload: any) => void;
 }
 
 export default function PDFStage({ sessionId, activeStageId }: PDFStageProps) {
@@ -18,7 +17,7 @@ export default function PDFStage({ sessionId, activeStageId }: PDFStageProps) {
     apiClient.get(`/api/v1/resources/sessions/${sessionId}/files/`)
       .then(res => {
         if (!alive) return;
-        const resources = res.data || [];
+        const resources = Array.isArray(res.data) ? res.data : (res.data?.results || []);
         // Try to find a PDF resource attached to this stage
         let match = resources.find((r: any) => r.resource_type === 'PDF' && String(r.stage) === String(activeStageId));
         // Fallback: pick the most recent uploaded PDF for the session

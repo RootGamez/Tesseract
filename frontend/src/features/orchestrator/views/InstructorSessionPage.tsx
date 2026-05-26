@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
-  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2
+  Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2, Upload
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -12,21 +12,16 @@ import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
 import { Separator } from '@/shared/components/ui/separator';
 import { Input } from '@/shared/components/ui/input';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
 import { useOrchestratorStore } from '../store/orchestratorStore';
 import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { sessionsService } from '@/shared/services/sessionsService';
+import apiClient from '@/shared/services/apiClient';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
 import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/shared/components/ui/dialog';
+import PDFStage from '@/features/presentations/components/PDFStage';
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
@@ -53,6 +48,7 @@ export default function InstructorSessionPage() {
   const [newStageType, setNewStageType] = useState('BOARD');
   const [newStageDuration, setNewStageDuration] = useState('10');
   const [isCreatingStage, setIsCreatingStage] = useState(false);
+  const [pptFile, setPptFile] = useState<File | null>(null);
 
   // Ref to active BoardWrapper so we can flush state before switching stages
   const boardRef = useRef<BoardWrapperHandle>(null);
@@ -120,6 +116,7 @@ export default function InstructorSessionPage() {
   const goPrev = async () => {
     if (activeIdx > 0 && id) {
       try {
+        useOrchestratorStore.getState().syncState({ activeStageId: stages[activeIdx - 1].id });
         if (boardRef.current) await boardRef.current.flushSnapshot();
         await sessionsService.changeStage(id, stages[activeIdx - 1].id);
       } catch (err) {
@@ -131,6 +128,7 @@ export default function InstructorSessionPage() {
   const goNext = async () => {
     if (activeIdx < stages.length - 1 && id) {
       try {
+        useOrchestratorStore.getState().syncState({ activeStageId: stages[activeIdx + 1].id });
         if (boardRef.current) await boardRef.current.flushSnapshot();
         await sessionsService.changeStage(id, stages[activeIdx + 1].id);
       } catch (err) {
@@ -183,6 +181,15 @@ export default function InstructorSessionPage() {
       return;
     }
 
+    if (newStageType === 'PDF' && !pptFile) {
+      toast({
+        title: 'Archivo requerido',
+        description: 'Selecciona un archivo PDF o PPTX para esta escena antes de crearla.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsCreatingStage(true);
     try {
       const payload = {
@@ -191,18 +198,42 @@ export default function InstructorSessionPage() {
         duration_estimated_minutes: Number(newStageDuration),
       };
       const created = await sessionsService.addStage(templateId, payload);
+
+      if (newStageType === 'PDF') {
+        if (!pptFile) {
+          toast({
+            title: 'Archivo requerido',
+            description: 'Selecciona un archivo PDF o PPTX para esta escena.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        const extension = pptFile.name.split('.').pop()?.toLowerCase();
+        const resourceType = extension === 'pdf' ? 'PDF' : 'PRESENTATION';
+        const formData = new FormData();
+        formData.append('file', pptFile);
+        formData.append('resource_type', resourceType);
+        formData.append('stage_id', created.id);
+
+        await apiClient.post(`/api/v1/resources/sessions/${id}/upload/`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+
       toast({
         title: 'Escena creada',
         description: `Se guardó la escena "${newStageTitle}" con éxito.`,
       });
+      useOrchestratorStore.getState().syncState({ activeStageId: created.id });
       await fetchSession();
-      if (!activeStageId) {
-        await sessionsService.changeStage(id!, created.id);
-      }
+      useOrchestratorStore.getState().syncState({ activeStageId: created.id });
+      await sessionsService.changeStage(id!, created.id);
       setIsAddOpen(false);
       setNewStageTitle('');
       setNewStageType('BOARD');
       setNewStageDuration('10');
+      setPptFile(null);
     } catch (err) {
       console.error('Failed to create stage:', err);
       toast({
@@ -222,6 +253,10 @@ export default function InstructorSessionPage() {
 
   const handleSpinner = () => sendMessage('gamification', 'SPINNER_RESULT', { excluded_ids: [] });
   const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
+
+  const handleSelectStageType = (stageType: string) => {
+    setNewStageType(stageType);
+  };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
@@ -330,6 +365,7 @@ export default function InstructorSessionPage() {
                     onClick={async () => {
                       if (id && !isActive) {
                         try {
+                          useOrchestratorStore.getState().syncState({ activeStageId: stage.id });
                           if (boardRef.current) await boardRef.current.flushSnapshot();
                           await sessionsService.changeStage(id, stage.id);
                         } catch (err) {
@@ -383,15 +419,29 @@ export default function InstructorSessionPage() {
           </ScrollArea>
 
           <div className="p-3 border-t border-border">
-            <Button
-              onClick={() => setIsAddOpen(true)}
-              variant="outline"
-              size="sm"
-              className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Agregar Escena
-            </Button>
+            <div className="space-y-2">
+              <Button
+                onClick={() => {
+                  setNewStageType('PDF');
+                  setIsAddOpen(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Nueva escena PDF
+              </Button>
+              <Button
+                onClick={() => setIsAddOpen(true)}
+                variant="outline"
+                size="sm"
+                className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Agregar Escena
+              </Button>
+            </div>
           </div>
         </aside>
 
@@ -421,8 +471,10 @@ export default function InstructorSessionPage() {
               </motion.div>
             ) : activeStage.type === 'BOARD' ? (
               <BoardWrapper ref={boardRef} key={activeStage.id} role="instructor" sendMessage={sendMessage} />
-            ) : activeStage.type === 'PDF' || activeStage.type === 'PRESENTATION' ? (
+            ) : activeStage.type === 'PRESENTATION' ? (
               <CollaborativePresentationStage key={activeStage.id} sessionId={id ?? ''} role="instructor" sendMessage={sendMessage} />
+            ) : activeStage.type === 'PDF' ? (
+              <PDFStage key={activeStage.id} sessionId={id ?? ''} role="instructor" activeStageId={activeStage.id} />
             ) : (
               <motion.div
                 key={activeStageId}
@@ -436,6 +488,7 @@ export default function InstructorSessionPage() {
                   {activeStage && (() => { const Icon = STAGE_ICONS[activeStage.type] ?? Zap; return <Icon className="w-10 h-10 text-white" />; })()}
                 </div>
                 <div>
+
                   <p className="text-white text-xl font-bold">{activeStage?.title}</p>
                   <p className="text-zinc-400 text-sm mt-1">
                     {activeStage?.type === 'PDF'
@@ -655,7 +708,7 @@ export default function InstructorSessionPage() {
               <div className="grid grid-cols-2 gap-3">
                 {/* BOARD (Pizarra) */}
                 <div
-                  onClick={() => setNewStageType('BOARD')}
+                  onClick={() => handleSelectStageType('BOARD')}
                   className={cn(
                     'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
                     newStageType === 'BOARD'
@@ -680,21 +733,35 @@ export default function InstructorSessionPage() {
                   </Badge>
                 </div>
 
-                {/* PDF (Visor de PDF) - Disabled */}
+                {/* PDF (Visor de PDF) */}
                 <div
-                  className="p-3.5 rounded-xl border-2 border-zinc-900 bg-zinc-900/20 text-zinc-600 flex flex-col gap-2 relative cursor-not-allowed"
+                  onClick={() => handleSelectStageType('PDF')}
+                  className={cn(
+                    'p-3.5 rounded-xl border-2 flex flex-col gap-2 relative overflow-hidden transition-all duration-200',
+                    newStageType === 'PDF'
+                      ? 'border-primary bg-primary/10 text-white cursor-pointer'
+                      : 'border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 cursor-pointer'
+                  )}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-zinc-950 flex items-center justify-center shrink-0 text-zinc-600">
+                    <div className={cn(
+                      'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      newStageType === 'PDF' ? 'bg-primary text-white' : 'bg-zinc-800 text-zinc-400'
+                    )}>
                       <FolderOpen className="w-4 h-4" />
                     </div>
-                    <span className="font-semibold text-sm text-zinc-500">Visor PDF</span>
+                    <span className={cn('font-semibold text-sm', newStageType === 'PDF' ? 'text-white' : 'text-zinc-500')}>
+                      Visor PDF
+                    </span>
                   </div>
-                  <p className="text-[11px] leading-snug text-zinc-600">
+                  <p className={cn('text-[11px] leading-snug', newStageType === 'PDF' ? 'text-zinc-300' : 'text-zinc-600')}>
                     Presentaciones, diapositivas y documentos compartidos.
                   </p>
-                  <Badge className="absolute top-2 right-2 bg-zinc-800 text-zinc-500 hover:bg-zinc-800 border-0 text-[9px] px-1.5 py-0">
-                    Próximamente
+                  <Badge className={cn(
+                    'absolute top-2 right-2 border-0 text-[9px] px-1.5 py-0',
+                    newStageType === 'PDF' ? 'bg-primary/20 text-primary-foreground' : 'bg-zinc-800 text-zinc-500 hover:bg-zinc-800'
+                  )}>
+                    {newStageType === 'PDF' ? 'Seleccionado' : 'Disponible'}
                   </Badge>
                 </div>
 
@@ -734,6 +801,26 @@ export default function InstructorSessionPage() {
                   </Badge>
                 </div>
               </div>
+
+              {newStageType === 'PDF' && (
+                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3">
+                  <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">
+                    Archivo PDF / PPTX de la escena
+                  </label>
+                  <Input
+                    type="file"
+                    accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    onChange={(e) => setPptFile(e.target.files?.[0] ?? null)}
+                    className="bg-zinc-900 border-zinc-800 text-white focus-visible:ring-primary focus-visible:border-primary file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1 file:text-xs file:font-semibold file:text-primary-foreground"
+                  />
+                  <p className="text-xs text-zinc-400">
+                    Al crear esta escena, el archivo se asociará a la diapositiva PDF para que se muestre en el visor.
+                  </p>
+                  {pptFile && (
+                    <p className="text-xs text-primary truncate">Seleccionado: {pptFile.name}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

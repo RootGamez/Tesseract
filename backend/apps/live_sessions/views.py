@@ -19,7 +19,8 @@ from asgiref.sync import async_to_sync
 from core.permissions import IsInstructor, IsInstructorOrAdmin, IsParticipantOrInstructor
 from core.websocket_events import SESSION_STATE, STAGE_CHANGED
 
-from .models import ClassTemplate, Stage, LiveSession, Participant, SessionState
+from apps.board.models import BoardSnapshot
+from .models import ClassTemplate, LiveSession, Participant, SessionState, Stage
 from .serializers import (
     ClassTemplateSerializer,
     ClassTemplateCreateSerializer,
