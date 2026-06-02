@@ -13,13 +13,14 @@ interface PDFStageProps {
   activeStageId?: string;
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  localFileUrl?: string;
 }
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 8;
 const ZOOM_STEP = 1.15;
 
-export default function PDFStage({ sessionId, role, activeStageId, currentPage: controlledPage, onPageChange }: PDFStageProps) {
+export default function PDFStage({ sessionId, role, activeStageId, currentPage: controlledPage, onPageChange, localFileUrl }: PDFStageProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
@@ -102,6 +103,14 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
 
   // ── Load PDF ─────────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (localFileUrl) {
+      setPdfUrl(localFileUrl);
+      setIsLoading(false);
+      setErrorMessage(null);
+      setPageCount(0);
+      pdfRef.current = null;
+      return;
+    }
     let alive = true;
     setIsLoading(true);
     setErrorMessage(null);
@@ -124,7 +133,7 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
       .finally(() => { if (alive) setIsLoading(false); });
 
     return () => { alive = false; };
-  }, [sessionId, activeStageId]);
+  }, [sessionId, activeStageId, localFileUrl]);
 
   // ── Init PDF document ────────────────────────────────────────────────────────
   useEffect(() => {

@@ -5,7 +5,7 @@ RF-SESSION-02: Motor de estados de sesión
 RF-SESSION-03: Modo dry-run
 RF-SESSION-04: Panel Director de Orquesta
 """
-from django.utils import timezone
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import action
@@ -45,7 +45,7 @@ class ClassTemplateViewSet(ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == "INSTRUCTOR":
-            return ClassTemplate.objects.filter(owner=user).prefetch_related("stages")
+            return ClassTemplate.objects.filter(owner=user).prefetch_related(Prefetch('stages', queryset=Stage.objects.order_by('order')))
         if user.role == "ADMIN":
             return ClassTemplate.objects.all().prefetch_related("stages")
         return ClassTemplate.objects.filter(is_public=True).prefetch_related("stages")
@@ -124,6 +124,28 @@ class ClassTemplateViewSet(ModelViewSet):
                 
         return Response({"detail": "Etapa eliminada."})
 
+    @action(detail=True, methods=["post"], url_path="stages/update")
+    def update_stage(self, request, pk=None):
+        """
+        POST /api/v1/sessions/templates/<pk>/stages/update/
+        Body: {"stage_id": "<uuid>", "title": "...", "duration_estimated_minutes": 10, "config": {...}, "initial_board_state": {...}}
+        """
+        template = self.get_object()
+        stage_id = request.data.get("stage_id")
+        stage = get_object_or_404(Stage, pk=stage_id, template=template)
+
+        if "title" in request.data:
+            stage.title = request.data["title"]
+        if "duration_estimated_minutes" in request.data:
+            stage.duration_estimated_minutes = request.data["duration_estimated_minutes"]
+        if "config" in request.data:
+            stage.config = request.data["config"]
+        if "initial_board_state" in request.data:
+            stage.initial_board_state = request.data["initial_board_state"]
+
+        stage.save()
+        return Response(StageSerializer(stage).data)
+
 
 # ── Live Sessions ─────────────────────────────────────────────────────────────
 
@@ -141,19 +163,7 @@ class LiveSessionViewSet(ModelViewSet):
         )
 
     def get_object(self):
-        obj = super().get_object()
-        if not obj.template and self.request.user.is_authenticated:
-            from apps.live_sessions.models import ClassTemplate
-            owner = obj.instructor if obj.instructor else self.request.user
-            template = ClassTemplate.objects.create(
-                owner=owner,
-                title=f"Plantilla - {obj.title}",
-                description="Creada automáticamente al consultar sesión.",
-                is_public=False,
-            )
-            obj.template = template
-            obj.save(update_fields=["template"])
-        return obj
+        return super().get_object()
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -174,18 +184,7 @@ class LiveSessionViewSet(ModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
-        template = serializer.validated_data.get("template")
-        if not template:
-            from apps.live_sessions.models import ClassTemplate
-            template = ClassTemplate.objects.create(
-                owner=self.request.user,
-                title=f"Plantilla - {serializer.validated_data.get('title')}",
-                description="Creada automáticamente para sesión sin plantilla.",
-                is_public=False,
-            )
-            serializer.save(instructor=self.request.user, template=template)
-        else:
-            serializer.save(instructor=self.request.user)
+        serializer.save(instructor=self.request.user)
 
     @action(detail=True, methods=["post"], url_path="transition")
     def transition(self, request, pk=None):

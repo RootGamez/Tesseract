@@ -16,6 +16,7 @@ const DashboardPage        = lazy(() => import('@/features/dashboard/views/Dashb
 const SessionsListPage     = lazy(() => import('@/features/sessions/views/SessionsListPage'));
 const CreateSessionPage    = lazy(() => import('@/features/sessions/views/CreateSessionPage'));
 const TemplatesPage        = lazy(() => import('@/features/templates/views/TemplatesPage'));
+const TemplateBuilderPage  = lazy(() => import('@/features/templates/views/TemplateBuilderPage'));
 const QuizBuilderPage      = lazy(() => import('@/features/quiz/views/QuizBuilderPage'));
 const AnalyticsPage        = lazy(() => import('@/features/analytics/views/AnalyticsPage'));
 const StudentsPage         = lazy(() => import('@/features/students/views/StudentsPage'));
@@ -97,6 +98,14 @@ export const router = createBrowserRouter([
     element: (
       <RequireAuth allowedRoles={['INSTRUCTOR', 'ADMIN']}>
         {withShell(<TemplatesPage />)}
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/templates/builder/:id',
+    element: (
+      <RequireAuth allowedRoles={['INSTRUCTOR', 'ADMIN']}>
+        {withShell(<TemplateBuilderPage />)}
       </RequireAuth>
     ),
   },
