@@ -3,13 +3,27 @@ from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.viewsets import ModelViewSet
 from core.permissions import IsInstructor, IsParticipantOrInstructor
-from .models import QuizQuestion, PointEvent, Timer
+from .models import Quiz, QuizQuestion, PointEvent, Timer
 from .serializers import (
-    QuizQuestionSerializer, PointEventSerializer,
+    QuizSerializer, QuizQuestionSerializer, PointEventSerializer,
     TimerSerializer, LeaderboardEntrySerializer,
 )
 
+
+class QuizViewSet(ModelViewSet):
+    """
+    CRUD ViewSet for the Instructor's Quiz database/library.
+    """
+    serializer_class = QuizSerializer
+    permission_classes = [IsInstructor]
+
+    def get_queryset(self):
+        return Quiz.objects.filter(owner=self.request.user).prefetch_related("questions")
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 class QuizQuestionListCreateView(generics.ListCreateAPIView):
@@ -22,10 +36,47 @@ class QuizQuestionListCreateView(generics.ListCreateAPIView):
         return [IsParticipantOrInstructor()]
 
     def get_queryset(self):
-        return QuizQuestion.objects.filter(session_id=self.kwargs["session_id"])
+        session_id = self.kwargs["session_id"]
+        stage_id = self.request.query_params.get("stage_id")
+        qs = QuizQuestion.objects.filter(session_id=session_id)
+        if stage_id:
+            qs = qs.filter(stage_id=stage_id)
+            if not qs.exists():
+                # Check if this stage has a quiz_id in config
+                from apps.live_sessions.models import Stage
+                try:
+                    stage = Stage.objects.get(pk=stage_id)
+                    quiz_id = stage.config.get("quiz_id")
+                    if quiz_id:
+                        # Copy questions from the template Quiz to the session + stage
+                        from .models import Quiz
+                        import datetime
+                        from django.utils import timezone
+                        quiz = Quiz.objects.get(pk=quiz_id)
+                        base_time = timezone.now()
+                        for idx, template_q in enumerate(quiz.questions.all().order_by("created_at")):
+                            created_time = base_time + datetime.timedelta(seconds=idx)
+                            q = QuizQuestion.objects.create(
+                                session_id=session_id,
+                                stage_id=stage_id,
+                                text=template_q.text,
+                                question_type=template_q.question_type,
+                                options=template_q.options,
+                                correct_answer=template_q.correct_answer,
+                                explanation=template_q.explanation,
+                                difficulty=template_q.difficulty,
+                                duration_seconds=template_q.duration_seconds,
+                            )
+                            QuizQuestion.objects.filter(pk=q.pk).update(created_at=created_time)
+                        # Re-fetch queryset
+                        qs = QuizQuestion.objects.filter(session_id=session_id, stage_id=stage_id)
+                except Exception:
+                    pass
+        return qs
 
     def perform_create(self, serializer):
-        serializer.save(session_id=self.kwargs["session_id"])
+        stage_id = self.request.query_params.get("stage_id")
+        serializer.save(session_id=self.kwargs["session_id"], stage_id=stage_id)
 
 
 class LeaderboardView(APIView):
@@ -57,7 +108,7 @@ class PointEventListView(generics.ListAPIView):
 class QuizQuestionBatchSyncView(APIView):
     """
     POST /api/v1/gamification/sessions/<session_id>/questions/sync/
-    Synchronizes the entire list of questions for a session.
+    Synchronizes the entire list of questions for a session/stage.
     Keeps the drag-and-drop order by updating the created_at timestamp sequentially.
     """
     permission_classes = [IsInstructor]
@@ -75,6 +126,7 @@ class QuizQuestionBatchSyncView(APIView):
             return Response({"error": "Sesión no encontrada"}, status=status.HTTP_404_NOT_FOUND)
 
         questions_data = request.data.get("questions", [])
+        stage_id = request.data.get("stage_id") or request.query_params.get("stage_id")
         if not isinstance(questions_data, list):
             return Response({"error": "El campo 'questions' debe ser una lista"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -118,7 +170,13 @@ class QuizQuestionBatchSyncView(APIView):
 
             if is_valid_uuid:
                 try:
-                    question = QuizQuestion.objects.get(pk=q_id, session=session)
+                    question_qs = QuizQuestion.objects.filter(pk=q_id, session=session)
+                    if stage_id:
+                        question_qs = question_qs.filter(stage_id=stage_id)
+                    else:
+                        question_qs = question_qs.filter(stage__isnull=True)
+                    
+                    question = question_qs.get()
                     question.text = text
                     question.options = db_options
                     question.correct_answer = correct_answer
@@ -132,6 +190,7 @@ class QuizQuestionBatchSyncView(APIView):
             if not question:
                 question = QuizQuestion.objects.create(
                     session=session,
+                    stage_id=stage_id,
                     text=text,
                     options=db_options,
                     correct_answer=correct_answer,
@@ -141,11 +200,22 @@ class QuizQuestionBatchSyncView(APIView):
 
             keep_ids.append(question.pk)
 
-        # Clean up deleted questions
-        QuizQuestion.objects.filter(session=session).exclude(pk__in=keep_ids).delete()
+        # Clean up deleted questions for this stage/session
+        cleanup_qs = QuizQuestion.objects.filter(session=session)
+        if stage_id:
+            cleanup_qs = cleanup_qs.filter(stage_id=stage_id)
+        else:
+            cleanup_qs = cleanup_qs.filter(stage__isnull=True)
+        
+        cleanup_qs.exclude(pk__in=keep_ids).delete()
 
         # Serialize and return updated list
         synced_questions = QuizQuestion.objects.filter(session=session)
+        if stage_id:
+            synced_questions = synced_questions.filter(stage_id=stage_id)
+        else:
+            synced_questions = synced_questions.filter(stage__isnull=True)
+            
         serializer = QuizQuestionSerializer(synced_questions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

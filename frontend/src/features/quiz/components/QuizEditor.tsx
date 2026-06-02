@@ -48,7 +48,7 @@ const quizSchema = z.object({
 
 type QuizFormValues = z.infer<typeof quizSchema>;
 
-export default function QuizEditor({ sessionId }: { sessionId?: string }) {
+export default function QuizEditor({ sessionId, stageId }: { sessionId?: string; stageId?: string }) {
   const { quizTitle, questions, isSaving, lastSaved, setView, updateQuizState, saveQuizDraft, loadSessionQuestions, resetQuiz } = useQuizStore();
 
   // Initialize React Hook Form
@@ -77,7 +77,7 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
   // Load questions from backend on mount if sessionId is provided
   useEffect(() => {
     if (sessionId && sessionId !== 'demo' && sessionId !== 'undefined') {
-      loadSessionQuestions(sessionId).then(() => {
+      loadSessionQuestions(sessionId, stageId).then(() => {
         const freshQuestions = useQuizStore.getState().questions;
         const freshTitle = useQuizStore.getState().quizTitle;
         reset({
@@ -88,7 +88,7 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
         });
       });
     }
-  }, [sessionId, loadSessionQuestions, reset]);
+  }, [sessionId, stageId, loadSessionQuestions, reset]);
 
   // We can track the last saved payload in a ref to avoid infinite save loops
   // and prevent unmounting/blinking caused by calling reset() on every save.
@@ -138,7 +138,7 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
     const timer = setTimeout(() => {
       // Push state to Zustand and trigger real or mock save to Django API
       updateQuizState(formValues.quizTitle, formValues.questions as Question[]);
-      saveQuizDraft(formValues.quizTitle, formValues.questions as Question[], sessionId).then(() => {
+      saveQuizDraft(formValues.quizTitle, formValues.questions as Question[], sessionId, stageId).then(() => {
         const freshQuestions = useQuizStore.getState().questions;
         const freshTitle = useQuizStore.getState().quizTitle;
 
@@ -165,7 +165,7 @@ export default function QuizEditor({ sessionId }: { sessionId?: string }) {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [formValues, updateQuizState, saveQuizDraft, sessionId, setValue]);
+  }, [formValues, updateQuizState, saveQuizDraft, sessionId, stageId, setValue]);
 
   // Handle Drag & Drop reordering
   const sensors = useSensors(

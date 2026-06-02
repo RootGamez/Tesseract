@@ -11,6 +11,7 @@ SESSION_STATE = "SESSION_STATE"
 PRESENTATION_STATE = "PRESENTATION_STATE"
 SLIDE_CHANGED = "slide.change"
 CANVAS_DRAW = "canvas.draw"
+PDF_PAGE_CHANGED = "PDF_PAGE_CHANGED"
 
 # ── Pizarra colaborativa ──────────────────────────────────────────────────────
 BOARD_UPDATE = "BOARD_UPDATE"

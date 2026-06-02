@@ -9,7 +9,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 
-from core.websocket_events import WS_ERROR
+from core.websocket_events import WS_ERROR, PDF_PAGE_CHANGED
 from core.throttling import WebSocketMessageThrottle
 
 logger = structlog.get_logger(__name__)
@@ -72,6 +72,21 @@ class PresentationConsumer(AsyncWebsocketConsumer):
                 return
             await self._update_canvas(payload)
 
+        elif event_type == "PDF_PAGE_CHANGED":
+            if not await self._is_instructor():
+                await self.send(text_data=json.dumps({"event": WS_ERROR, "payload": {"message": "Acción no autorizada."}}))
+                return
+            page = int(payload.get("page", 1))
+            stage_id = payload.get("stage_id", "")
+            await self.channel_layer.group_send(
+                self.presentation_group,
+                {
+                    "type": "pdf.page.changed",
+                    "event": PDF_PAGE_CHANGED,
+                    "payload": {"page": page, "stage_id": stage_id},
+                },
+            )
+
         elif event_type == "REQUEST_PRESENTATION_SYNC":
             await self._send_current_state()
 
@@ -82,6 +97,9 @@ class PresentationConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     async def canvas_draw(self, event):
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def pdf_page_changed(self, event):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     @database_sync_to_async

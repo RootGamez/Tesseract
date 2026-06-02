@@ -26,6 +26,8 @@ import {
 
 // Core State & Services
 import { useOrchestratorStore } from '../store/orchestratorStore';
+import { useChatStore } from '@/features/chat/store/chatStore';
+import { useAuthStore } from '@/features/auth/store/authStore';
 import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { sessionsService } from '@/shared/services/sessionsService';
 import apiClient from '@/shared/services/apiClient';
@@ -41,6 +43,7 @@ import PDFStage from '@/features/presentations/components/PDFStage';
 import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import QuizBuilderPage from '@/features/quiz/views/QuizBuilderPage';
 import { useQuizStore } from '@/features/quiz/store/useQuizStore';
+import { quizService } from '@/shared/services/quizService';
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
@@ -73,6 +76,27 @@ export default function InstructorSessionPage() {
   const [newStageDuration, setNewStageDuration] = useState('10');
   const [isCreatingStage, setIsCreatingStage] = useState(false);
   const [pptFile, setPptFile] = useState<File | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [currentPdfPage, setCurrentPdfPage] = useState(1);
+  const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
+  const [quizLaunched, setQuizLaunched] = useState(false);
+
+  const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
+  const [selectedQuizId, setSelectedQuizId] = useState<string>('');
+
+  useEffect(() => {
+    if (isAddOpen) {
+      quizService.listSavedQuizzes()
+        .then((data) => setSavedQuizzes(data))
+        .catch((err) => console.error("Error fetching saved quizzes:", err));
+    } else {
+      setSelectedQuizId('');
+    }
+  }, [isAddOpen]);
+
+  const { messages: chatMessages } = useChatStore();
+  const { user } = useAuthStore();
 
   const boardRef = useRef<BoardWrapperHandle>(null);
 
@@ -159,6 +183,13 @@ export default function InstructorSessionPage() {
     }
     fetchSession();
   }, [id]);
+
+  // Reset per-stage state when switching stages
+  useEffect(() => {
+    setCurrentPdfPage(1);
+    setQuizQuestionIndex(0);
+    setQuizLaunched(false);
+  }, [activeStageId]);
 
   const goPrev = async () => {
     if (activeIdx > 0 && id) {
@@ -249,11 +280,15 @@ export default function InstructorSessionPage() {
 
     setIsCreatingStage(true);
     try {
-      const payload = {
+      const payload: any = {
         title: newStageTitle.trim(),
         stage_type: newStageType,
         duration_estimated_minutes: Number(newStageDuration),
       };
+
+      if (newStageType === 'QUIZ' && selectedQuizId) {
+        payload.config = { quiz_id: selectedQuizId };
+      }
       
       const created = await sessionsService.addStage(resolvedTemplateId, payload);
 
@@ -303,23 +338,33 @@ export default function InstructorSessionPage() {
   };
 
   const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
+
+  const handlePdfPageChange = (page: number) => {
+    setCurrentPdfPage(page);
+    sendMessage('presentations', 'PDF_PAGE_CHANGED', { page, stage_id: activeStage?.id ?? '' });
+  };
   
-  const handleLaunchQuiz = () => {
+  const handleLaunchQuizQuestion = (index: number) => {
     const activeQuestions = useQuizStore.getState().questions;
-    if (activeQuestions.length === 0 || !activeQuestions[0].id || activeQuestions[0].id.startsWith('q_')) {
+    const question = activeQuestions[index];
+    if (!question || !question.id || question.id.startsWith('q_')) {
       toast({
         title: 'Sin preguntas guardadas',
-        description: 'Debes agregar y autoguardar al menos una pregunta en el Quiz Builder antes de lanzarlo.',
+        description: 'Guarda las preguntas en el Quiz Builder antes de lanzarlas.',
         variant: 'destructive',
       });
       return;
     }
-    sendMessage('gamification', 'QUIZ_LAUNCHED', { question_id: activeQuestions[0].id });
+    sendMessage('gamification', 'QUIZ_LAUNCHED', { question_id: question.id });
+    setQuizQuestionIndex(index);
+    setQuizLaunched(true);
     toast({
-      title: '¡Quiz lanzado!',
-      description: 'La primera pregunta del cuestionario ha sido enviada a todos los estudiantes.',
+      title: `Pregunta ${index + 1} lanzada`,
+      description: question.question_text.slice(0, 60) + (question.question_text.length > 60 ? '...' : ''),
     });
   };
+
+  const handleLaunchQuiz = () => handleLaunchQuizQuestion(0);
 
   const handleSelectStageType = (stageType: string) => {
     setNewStageType(stageType);
@@ -536,10 +581,10 @@ export default function InstructorSessionPage() {
             ) : activeStage.type === 'PRESENTATION' ? (
               <CollaborativePresentationStage key={activeStage.id} sessionId={id ?? ''} role="instructor" sendMessage={sendMessage} />
             ) : activeStage.type === 'PDF' ? (
-              <PDFStage key={activeStage.id} sessionId={id ?? ''} role="instructor" activeStageId={activeStage.id} />
+              <PDFStage key={activeStage.id} sessionId={id ?? ''} role="instructor" activeStageId={activeStage.id} currentPage={currentPdfPage} onPageChange={handlePdfPageChange} />
             ) : activeStage.type === 'QUIZ' || activeStage.type === 'GAME' ? (
               <div className="w-full h-full overflow-y-auto bg-background text-foreground p-4">
-                <QuizBuilderPage sessionId={id ?? ''} />
+                <QuizBuilderPage sessionId={id ?? ''} stageId={activeStage.id} />
               </div>
             ) : (
               <motion.div
@@ -586,6 +631,80 @@ export default function InstructorSessionPage() {
 
             {/* CLASE TAB */}
             <TabsContent value="clase" className="flex-1 overflow-y-auto m-0 p-3 space-y-4 scrollbar-thin">
+
+              {/* ── QUIZ CONTROLS (only when on a QUIZ stage) ── */}
+              {activeStage?.type === 'QUIZ' && (() => {
+                const qs = useQuizStore.getState().questions;
+                const total = qs.length;
+                const hasSaved = total > 0 && qs[0]?.id && !qs[0].id.startsWith('q_');
+                return (
+                  <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-3">
+                    <p className="text-xs font-semibold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Trophy className="w-3.5 h-3.5" /> Control del Quiz
+                    </p>
+                    {!hasSaved ? (
+                      <p className="text-xs text-zinc-400">
+                        Guarda al menos una pregunta en el editor para poder lanzarlas.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-zinc-400">
+                          {quizLaunched
+                            ? `Pregunta ${quizQuestionIndex + 1} de ${total} activa`
+                            : `${total} pregunta${total !== 1 ? 's' : ''} lista${total !== 1 ? 's' : ''}`}
+                        </p>
+                        {!quizLaunched ? (
+                          <Button
+                            className="w-full h-10 sidebar-gradient border-0 text-white text-xs font-bold gap-2"
+                            onClick={() => handleLaunchQuizQuestion(0)}
+                          >
+                            <Trophy className="w-4 h-4" />
+                            Iniciar Quiz (Preg. 1)
+                          </Button>
+                        ) : (
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 h-9 text-xs"
+                              onClick={() => handleLaunchQuizQuestion(quizQuestionIndex)}
+                            >
+                              Relanzar
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="flex-1 h-9 text-xs sidebar-gradient border-0 text-white"
+                              disabled={quizQuestionIndex + 1 >= total}
+                              onClick={() => handleLaunchQuizQuestion(quizQuestionIndex + 1)}
+                            >
+                              {quizQuestionIndex + 1 < total
+                                ? `Preg. ${quizQuestionIndex + 2} →`
+                                : 'Fin del quiz'}
+                            </Button>
+                          </div>
+                        )}
+                        {/* List of questions */}
+                        <div className="space-y-1 max-h-36 overflow-y-auto scrollbar-thin">
+                          {qs.map((q, i) => (
+                            <button
+                              key={q.id}
+                              onClick={() => handleLaunchQuizQuestion(i)}
+                              className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg transition-colors truncate ${
+                                i === quizQuestionIndex && quizLaunched
+                                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                                  : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                              }`}
+                            >
+                              {i + 1}. {q.question_text || '(sin texto)'}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gamificación</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -596,10 +715,6 @@ export default function InstructorSessionPage() {
                   <Button variant="outline" className="h-16 flex-col gap-1 text-xs" onClick={handleTimer}>
                     <Timer className="w-5 h-5 text-accent" />
                     Timer
-                  </Button>
-                  <Button variant="outline" className="h-16 flex-col gap-1 text-xs col-span-2 hover:bg-primary/5 hover:text-primary" onClick={handleLaunchQuiz}>
-                    <Trophy className="w-5 h-5 text-yellow-500" />
-                    Lanzar Quiz
                   </Button>
                 </div>
               </div>
@@ -694,11 +809,18 @@ export default function InstructorSessionPage() {
               Puntero Láser
             </Button>
           )}
-          {(activeStage?.type === 'PDF' || activeStage?.type === 'PRESENTATION') && (
+          {activeStage?.type === 'PDF' && (
             <div className="flex items-center gap-1.5">
-              <Button variant="outline" size="sm" className="h-8 text-xs w-8 p-0">‹</Button>
-              <span className="text-xs font-mono text-muted-foreground">Sincronizado</span>
-              <Button variant="outline" size="sm" className="h-8 text-xs w-8 p-0">›</Button>
+              <Button
+                variant="outline" size="sm" className="h-8 text-xs w-8 p-0"
+                onClick={() => handlePdfPageChange(currentPdfPage - 1)}
+                disabled={currentPdfPage <= 1}
+              >‹</Button>
+              <span className="text-xs font-mono text-muted-foreground">Pág. {currentPdfPage}</span>
+              <Button
+                variant="outline" size="sm" className="h-8 text-xs w-8 p-0"
+                onClick={() => handlePdfPageChange(currentPdfPage + 1)}
+              >›</Button>
             </div>
           )}
         </div>
@@ -739,9 +861,19 @@ export default function InstructorSessionPage() {
             </DialogContent>
           </Dialog>
 
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 relative"
+            onClick={() => setIsChatOpen(!isChatOpen)}
+          >
             <MessageCircle className="w-3.5 h-3.5" />
             Chat
+            {chatMessages.length > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-accent text-[9px] font-bold text-white flex items-center justify-center border border-background">
+                {chatMessages.length > 9 ? '9+' : chatMessages.length}
+              </span>
+            )}
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
             <FolderOpen className="w-3.5 h-3.5" />
@@ -753,6 +885,81 @@ export default function InstructorSessionPage() {
           </Button>
         </div>
       </footer>
+
+      {/* ── CHAT DRAWER ─────────────────────────────────── */}
+      <AnimatePresence>
+        {isChatOpen && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="absolute inset-y-0 right-0 w-80 bg-zinc-900 border-l border-white/10 flex flex-col z-40 shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <h3 className="text-white font-semibold text-sm">Chat de la Clase</h3>
+              <button onClick={() => setIsChatOpen(false)} className="text-zinc-400 hover:text-white transition-colors">
+                <span className="w-4 h-4 flex items-center justify-center text-base leading-none">✕</span>
+              </button>
+            </div>
+
+            <ScrollArea className="flex-1 p-3">
+              {chatMessages.length === 0 && (
+                <p className="text-zinc-500 text-sm text-center py-8">Aún no hay mensajes</p>
+              )}
+              <div className="space-y-3">
+                {chatMessages.map(msg => (
+                  <div key={msg.id} className={cn('flex gap-2', msg.author_id === (user?.id ?? '') && 'flex-row-reverse')}>
+                    <Avatar className="h-6 w-6 shrink-0 mt-0.5">
+                      <AvatarFallback className="text-[9px] bg-primary/60 text-white">
+                        {msg.author.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className={cn('max-w-[75%]', msg.author_id === (user?.id ?? '') && 'items-end flex flex-col')}>
+                      <p className="text-zinc-400 text-[10px] mb-1">{msg.author}</p>
+                      <div className={cn(
+                        'px-3 py-2 rounded-xl text-sm',
+                        msg.author_id === (user?.id ?? '')
+                          ? 'bg-primary text-white rounded-tr-sm'
+                          : 'bg-zinc-800 text-zinc-100 rounded-tl-sm'
+                      )}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+
+            <div className="p-3 border-t border-white/10 flex gap-2">
+              <Input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && chatInput.trim()) {
+                    sendMessage('chat', 'CHAT_MESSAGE', { text: chatInput.trim(), is_floating: false });
+                    setChatInput('');
+                  }
+                }}
+                placeholder="Escribe un mensaje..."
+                className="flex-1 h-9 bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
+              />
+              <Button
+                size="sm"
+                className="h-9 px-3 sidebar-gradient border-0 text-white"
+                onClick={() => {
+                  if (chatInput.trim()) {
+                    sendMessage('chat', 'CHAT_MESSAGE', { text: chatInput.trim(), is_floating: false });
+                    setChatInput('');
+                  }
+                }}
+              >
+                ➤
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── MODAL AGREGAR ESCENA ───────────────────────── */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -865,6 +1072,38 @@ export default function InstructorSessionPage() {
                     className="bg-zinc-900 border-zinc-800 text-white file:bg-primary file:text-primary-foreground file:text-xs file:rounded-md file:border-0"
                   />
                   {pptFile && <p className="text-xs text-primary truncate">Seleccionado: {pptFile.name}</p>}
+                </div>
+              )}
+
+              {newStageType === 'QUIZ' && (
+                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3 animate-fade-in">
+                  <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">
+                    Seleccionar Quiz Guardado (Opcional)
+                  </label>
+                  <select
+                    value={selectedQuizId}
+                    onChange={(e) => {
+                      const qId = e.target.value;
+                      setSelectedQuizId(qId);
+                      if (qId) {
+                        const selected = savedQuizzes.find(q => q.id === qId);
+                        if (selected) {
+                          setNewStageTitle(selected.title);
+                        }
+                      }
+                    }}
+                    className="w-full h-9 rounded-md border border-zinc-800 bg-zinc-900 text-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  >
+                    <option value="">-- Crear Quiz en Blanco --</option>
+                    {savedQuizzes.map((quiz) => (
+                      <option key={quiz.id} value={quiz.id}>
+                        {quiz.title} ({quiz.question_count} preg.)
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-zinc-500">
+                    Si seleccionas un quiz, se copiarán sus preguntas para esta escena.
+                  </p>
                 </div>
               )}
             </div>

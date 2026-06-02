@@ -16,16 +16,25 @@ export interface Question {
 interface QuizState {
   quizTitle: string;
   questions: Question[];
-  currentView: 'editor' | 'simulator';
+  currentView: 'editor' | 'simulator' | 'library';
   isSaving: boolean;
   lastSaved: string | null;
+  currentQuizId: string | null;
+  savedQuizzes: any[];
   
   // Actions
   updateQuizState: (title: string, questions: Question[]) => void;
-  setView: (view: 'editor' | 'simulator') => void;
-  saveQuizDraft: (title: string, questions: Question[], sessionId?: string) => Promise<void>;
-  loadSessionQuestions: (sessionId: string) => Promise<void>;
+  setView: (view: 'editor' | 'simulator' | 'library') => void;
+  saveQuizDraft: (title: string, questions: Question[], sessionId?: string, stageId?: string) => Promise<void>;
+  loadSessionQuestions: (sessionId: string, stageId?: string) => Promise<void>;
   resetQuiz: () => void;
+
+  // Library Actions
+  loadSavedQuizzes: () => Promise<void>;
+  saveSavedQuiz: (title: string, questions: Question[]) => Promise<string | null>;
+  deleteSavedQuiz: (quizId: string) => Promise<void>;
+  selectQuizForEditing: (quiz: any) => void;
+  createBlankQuiz: () => void;
 }
 
 const DEFAULT_QUESTIONS: Question[] = [
@@ -41,7 +50,7 @@ const DEFAULT_QUESTIONS: Question[] = [
   },
 ];
 
-export const useQuizStore = create<QuizState>((set) => {
+export const useQuizStore = create<QuizState>((set, get) => {
   // Try to load initial state from localStorage if available
   let initialTitle = 'Repaso de Programación';
   let initialQuestions = DEFAULT_QUESTIONS;
@@ -58,9 +67,11 @@ export const useQuizStore = create<QuizState>((set) => {
   return {
     quizTitle: initialTitle,
     questions: initialQuestions,
-    currentView: 'editor',
+    currentView: 'library', // Default to library view for standalone builder
     isSaving: false,
     lastSaved: localStorage.getItem('tesseract_quiz_last_saved'),
+    currentQuizId: null,
+    savedQuizzes: [],
 
     updateQuizState: (title, questions) => {
       set({ quizTitle: title, questions });
@@ -74,14 +85,14 @@ export const useQuizStore = create<QuizState>((set) => {
 
     setView: (view) => set({ currentView: view }),
 
-    saveQuizDraft: async (title, questions, sessionId) => {
+    saveQuizDraft: async (title, questions, sessionId, stageId) => {
       set({ isSaving: true });
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
       // If we have a real session active, save it in Django DB
       if (sessionId && sessionId !== 'demo' && sessionId !== 'undefined') {
         try {
-          const updatedQuestions = await quizService.syncQuestions(sessionId, questions);
+          const updatedQuestions = await quizService.syncQuestions(sessionId, questions, stageId);
           set({
             quizTitle: title,
             questions: updatedQuestions,
@@ -96,6 +107,56 @@ export const useQuizStore = create<QuizState>((set) => {
           return;
         } catch (err) {
           console.error('Failed to auto-save to Django API, falling back to mock save', err);
+        }
+      }
+
+      // If we are in library mode (editing a saved quiz), auto-save to backend library!
+      const currentQuizId = get().currentQuizId;
+      if (!sessionId) {
+        try {
+          if (currentQuizId) {
+            const updatedQuiz = await quizService.updateSavedQuiz(currentQuizId, title, questions);
+            const updatedQuestions = updatedQuiz.questions.map((q: any) => ({
+              id: q.id,
+              question_text: q.text,
+              options: (q.options || []).map((o: any, idx: number) => ({
+                id: o.id || `o_${q.id}_${idx}`,
+                text: o.text,
+                is_correct: o.is_correct === true,
+              })),
+            }));
+            set({
+              quizTitle: title,
+              questions: updatedQuestions,
+              isSaving: false,
+              lastSaved: now,
+            });
+            localStorage.setItem('tesseract_quiz_last_saved', now);
+            return;
+          } else {
+            // First character auto-create
+            const created = await quizService.createSavedQuiz(title, questions);
+            const updatedQuestions = created.questions.map((q: any) => ({
+              id: q.id,
+              question_text: q.text,
+              options: (q.options || []).map((o: any, idx: number) => ({
+                id: o.id || `o_${q.id}_${idx}`,
+                text: o.text,
+                is_correct: o.is_correct === true,
+              })),
+            }));
+            set({
+              currentQuizId: created.id,
+              quizTitle: title,
+              questions: updatedQuestions,
+              isSaving: false,
+              lastSaved: now,
+            });
+            localStorage.setItem('tesseract_quiz_last_saved', now);
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to auto-save to saved quiz library', err);
         }
       }
       
@@ -118,18 +179,18 @@ export const useQuizStore = create<QuizState>((set) => {
       }
     },
 
-    loadSessionQuestions: async (sessionId) => {
+    loadSessionQuestions: async (sessionId, stageId) => {
       if (!sessionId || sessionId === 'demo' || sessionId === 'undefined') {
         return;
       }
       set({ isSaving: true });
       try {
-        const questions = await quizService.listQuestions(sessionId);
+        const questions = await quizService.listQuestions(sessionId, stageId);
         set({
           questions,
           isSaving: false,
         });
-        console.log(`[API] Loaded questions list from Django session: ${sessionId}`);
+        console.log(`[API] Loaded questions list from Django session: ${sessionId} (stage: ${stageId})`);
       } catch (err) {
         console.error('Failed to load session questions from Django', err);
         set({ isSaving: false });
@@ -168,6 +229,89 @@ export const useQuizStore = create<QuizState>((set) => {
         },
       ]));
       localStorage.setItem('tesseract_quiz_last_saved', now);
-    }
+    },
+
+    // Library operations implementation
+    loadSavedQuizzes: async () => {
+      set({ isSaving: true });
+      try {
+        const response = await quizService.listSavedQuizzes();
+        const quizzes = Array.isArray(response) ? response : (response?.results ?? []);
+        set({ savedQuizzes: quizzes, isSaving: false });
+      } catch (err) {
+        console.error('Failed to load saved quizzes from API', err);
+        set({ isSaving: false });
+      }
+    },
+
+    saveSavedQuiz: async (title, questions) => {
+      set({ isSaving: true });
+      const currentQuizId = get().currentQuizId;
+      try {
+        let result;
+        if (currentQuizId) {
+          result = await quizService.updateSavedQuiz(currentQuizId, title, questions);
+        } else {
+          result = await quizService.createSavedQuiz(title, questions);
+        }
+        set({ currentQuizId: result.id, isSaving: false });
+        return result.id;
+      } catch (err) {
+        console.error('Failed to save quiz to library', err);
+        set({ isSaving: false });
+        return null;
+      }
+    },
+
+    deleteSavedQuiz: async (quizId) => {
+      set({ isSaving: true });
+      try {
+        await quizService.deleteSavedQuiz(quizId);
+        const updatedList = get().savedQuizzes.filter(q => q.id !== quizId);
+        set({ savedQuizzes: updatedList, isSaving: false });
+      } catch (err) {
+        console.error('Failed to delete quiz from library', err);
+        set({ isSaving: false });
+      }
+    },
+
+    selectQuizForEditing: (quiz) => {
+      const mappedQuestions = (quiz.questions || []).map((q: any) => ({
+        id: q.id,
+        question_text: q.text,
+        options: (q.options || []).map((o: any, idx: number) => ({
+          id: o.id || `o_${q.id}_${idx}`,
+          text: o.text,
+          is_correct: o.is_correct === true,
+        })),
+      }));
+
+      set({
+        currentQuizId: quiz.id,
+        quizTitle: quiz.title,
+        questions: mappedQuestions,
+        currentView: 'editor',
+      });
+    },
+
+    createBlankQuiz: () => {
+      set({
+        currentQuizId: null,
+        quizTitle: 'Nuevo Quiz Guardado',
+        questions: [
+          {
+            id: 'q1',
+            question_text: '',
+            options: [
+              { id: 'o1', text: '', is_correct: false },
+              { id: 'o2', text: '', is_correct: false },
+              { id: 'o3', text: '', is_correct: false },
+              { id: 'o4', text: '', is_correct: false },
+            ],
+          },
+        ],
+        currentView: 'editor',
+      });
+    },
   };
 });

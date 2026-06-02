@@ -263,6 +263,16 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
       case 'TIMER_PAUSED':
       case 'TIMER_CANCELLED':
         break;
+      case 'QUIZ_LAUNCHED':
+        a.setSceneState({ activeScene: 'QUIZ', stageData: payload });
+        window.dispatchEvent(new CustomEvent('quiz-launched', { detail: payload }));
+        break;
+      case 'QUIZ_RESULTS':
+        window.dispatchEvent(new CustomEvent('quiz-results', { detail: payload }));
+        break;
+      case 'PDF_PAGE_CHANGED':
+        window.dispatchEvent(new CustomEvent('pdf-page-changed', { detail: payload }));
+        break;
       default:
         break;
     }

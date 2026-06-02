@@ -15,6 +15,7 @@ import BoardWrapper from '@/features/board/components/BoardWrapper';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import PDFStage from '@/features/presentations/components/PDFStage';
+import StudentQuizView from '@/features/quiz/components/StudentQuizView';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'];
 
@@ -76,6 +77,8 @@ export default function StudentSessionPage() {
             <CollaborativePresentationStage key={activeStageId} sessionId={id ?? ''} role="student" sendMessage={sendMessage} />
           ) : activeScene === 'PDF' ? (
             <PDFStage key={activeStageId} sessionId={id ?? ''} role="student" activeStageId={activeStageId} />
+          ) : activeScene === 'QUIZ' ? (
+            <StudentQuizView key={activeStageId} sessionId={id ?? ''} stageId={activeStageId} sendMessage={sendMessage} />
           ) : (
             <motion.div
               key={activeScene}
