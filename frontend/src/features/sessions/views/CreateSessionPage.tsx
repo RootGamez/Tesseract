@@ -1,16 +1,18 @@
 import { useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
-import { Loader2, ArrowLeft, BookOpen, Zap, Clock } from 'lucide-react';
+import { Loader2, ArrowLeft, BookOpen, Clock, Zap } from 'lucide-react';
 import { Topbar } from '@/shared/components/layout/Topbar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Separator } from '@/shared/components/ui/separator';
 import { sessionsService } from '@/shared/services/sessionsService';
+import { templatesService, type ClassTemplate } from '@/shared/services/templatesService';
 import { useToast } from '@/shared/hooks/use-toast';
 import { cn } from '@/shared/lib/utils';
 
@@ -20,22 +22,33 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-const MOCK_TEMPLATES = [
-  { id: 't1', name: 'Clase Magistral', description: 'Exposición + Pizarra + Quiz final', icon: BookOpen, stages: 4 },
-  { id: 't2', name: 'Taller Práctico', description: 'Pizarra colaborativa + Snippets + Evaluación', icon: Zap, stages: 5 },
-  { id: 't3', name: 'Clase Rápida (30 min)', description: 'Introducción + Actividad + Cierre', icon: Clock, stages: 3 },
-];
-
 export default function CreateSessionPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<ClassTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { title: '' },
   });
+
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        const data = await templatesService.list();
+        setTemplates(data);
+      } catch {
+        setTemplates([]);
+      } finally {
+        setTemplatesLoading(false);
+      }
+    };
+
+    loadTemplates();
+  }, []);
 
   const onSubmit = async (data: FormData) => {
     setIsLoading(true);
@@ -90,10 +103,22 @@ export default function CreateSessionPage() {
           <Card className="border-border shadow-card">
             <CardHeader>
               <CardTitle className="text-base">Plantilla (opcional)</CardTitle>
-              <CardDescription>Elige una estructura predefinida para agilizar la preparación</CardDescription>
+              <CardDescription>Elige una estructura creada previamente en la sección de plantillas</CardDescription>
             </CardHeader>
             <Separator />
             <CardContent className="pt-5">
+              {templatesLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="p-4 rounded-xl border-2 border-border animate-pulse">
+                      <div className="w-8 h-8 rounded-lg bg-muted mb-3" />
+                      <div className="h-4 w-2/3 bg-muted rounded mb-2" />
+                      <div className="h-3 w-full bg-muted rounded mb-2" />
+                      <div className="h-3 w-1/2 bg-muted rounded" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <motion.div
                   whileHover={{ scale: 1.02 }}
@@ -110,25 +135,34 @@ export default function CreateSessionPage() {
                   <p className="text-xs text-muted-foreground">Empezar desde cero</p>
                 </motion.div>
 
-                {MOCK_TEMPLATES.map(t => (
+                {templates.map((template, index) => {
+                  const Icon = [BookOpen, Zap, Clock][index % 3];
+                  return (
                   <motion.div
-                    key={t.id}
+                    key={template.id}
                     whileHover={{ scale: 1.02 }}
-                    onClick={() => setSelectedTemplate(t.id)}
+                    onClick={() => setSelectedTemplate(template.id)}
                     className={cn(
                       'p-4 rounded-xl border-2 cursor-pointer transition-all',
-                      selectedTemplate === t.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
+                      selectedTemplate === template.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
                     )}
                   >
                     <div className="w-8 h-8 rounded-lg card-gradient-blue flex items-center justify-center mb-3">
-                      <t.icon className="w-4 h-4 text-white" />
+                      <Icon className="w-4 h-4 text-white" />
                     </div>
-                    <p className="font-semibold text-sm mb-1">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">{t.description}</p>
-                    <p className="text-xs text-primary mt-2 font-medium">{t.stages} etapas</p>
+                    <p className="font-semibold text-sm mb-1">{template.title}</p>
+                    <p className="text-xs text-muted-foreground">{template.description}</p>
+                    <p className="text-xs text-primary mt-2 font-medium">{template.stage_count || template.stages?.length || 0} etapas</p>
                   </motion.div>
-                ))}
+                  );
+                })}
               </div>
+              )}
+              {!templatesLoading && templates.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  No tienes plantillas creadas aún. Ve a la sección Plantillas para crear una estructura reutilizable.
+                </p>
+              )}
             </CardContent>
           </Card>
 

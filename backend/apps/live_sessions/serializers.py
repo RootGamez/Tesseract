@@ -87,7 +87,7 @@ class LiveSessionSerializer(serializers.ModelSerializer):
 
     def get_stages(self, obj):
         if obj.template:
-            return StageSerializer(obj.template.stages.all(), many=True).data
+            return StageSerializer(obj.template.stages.order_by('order'), many=True).data
         return []
 
     def get_online_count(self, obj):
