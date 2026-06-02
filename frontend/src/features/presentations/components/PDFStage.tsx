@@ -122,7 +122,7 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
       const context = canvas.getContext('2d');
       if (!context) return;
 
-      const renderTask = page.render({ canvasContext: context, canvas, viewport });
+      const renderTask = page.render({ canvasContext: context, viewport });
       renderTaskRef.current = renderTask;
       await renderTask.promise;
     } catch (err: any) {

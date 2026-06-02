@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 import { useChatStore } from '@/features/chat/store/chatStore';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
+import { useAuthStore } from '@/features/auth/store/authStore';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -177,11 +178,14 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
               p.id === payload.participant_id ? { ...p, online: true } : p
             );
           } else {
+            const currentUser = useAuthStore.getState().user;
             newParticipants.push({
               id: payload.participant_id,
               name: payload.display_name,
               points: 0,
               online: true,
+              isInstructor: payload.is_instructor
+                ?? (roleRef.current === 'instructor' && payload.display_name === currentUser?.display_name),
             });
           }
           state.syncState({ participants: newParticipants });

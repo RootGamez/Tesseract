@@ -58,18 +58,20 @@ class SessionConsumer(AsyncWebsocketConsumer):
 
         # Mark as online and notify group
         await self._set_connection_status("ONLINE")
-        await self.channel_layer.group_send(
-            self.session_group,
-            {
-                "type": "participant.joined",
-                "event": PARTICIPANT_JOINED,
-                "payload": {
-                    "participant_id": str(self.participant.pk),
-                    "display_name": self.participant.display_name,
-                    "is_guest": self.participant.is_guest,
+        is_instructor = str(session.instructor_id) == str(user.pk)
+        if not is_instructor:
+            await self.channel_layer.group_send(
+                self.session_group,
+                {
+                    "type": "participant.joined",
+                    "event": PARTICIPANT_JOINED,
+                    "payload": {
+                        "participant_id": str(self.participant.pk),
+                        "display_name": self.participant.display_name,
+                        "is_guest": self.participant.is_guest,
+                    },
                 },
-            },
-        )
+            )
 
         # Send current session state to newly connected client
         await self.send_session_state(session)

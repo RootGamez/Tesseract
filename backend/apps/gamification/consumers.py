@@ -321,11 +321,16 @@ class GamificationConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _pick_random_participant(self, excluded_ids: list):
-        from apps.live_sessions.models import Participant
+        from apps.live_sessions.models import LiveSession, Participant
+        try:
+            session = LiveSession.objects.get(pk=self.session_id)
+            instructor_id = session.instructor_id
+        except Exception:
+            instructor_id = None
         qs = Participant.objects.filter(
             session_id=self.session_id,
             connection_status="ONLINE",
-        ).exclude(pk__in=excluded_ids)
+        ).exclude(pk__in=excluded_ids).exclude(user_id=instructor_id)
         participants = list(qs)
         return random.choice(participants) if participants else None
 

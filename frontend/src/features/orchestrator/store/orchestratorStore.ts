@@ -13,6 +13,7 @@ export interface Participant {
   name: string;
   points: number;
   online: boolean;
+  isInstructor?: boolean;
 }
 
 export interface OrchestratorState {

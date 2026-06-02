@@ -15,6 +15,7 @@ interface Participant {
   name: string;
   online: boolean;
   points: number;
+  isInstructor?: boolean;
 }
 
 interface InstructorQuizFlowProps {
@@ -138,7 +139,7 @@ export default function InstructorQuizFlow({
   };
 
   const questions = loadedQuestions.length > 0 ? loadedQuestions : storeQuestions;
-  const onlinePlayers = participants.filter(p => p.online);
+  const onlinePlayers = participants.filter(p => p.online && !p.isInstructor);
 
   return (
     <div className="w-full h-full flex flex-col bg-background overflow-hidden">

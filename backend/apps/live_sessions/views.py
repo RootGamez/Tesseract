@@ -303,7 +303,7 @@ class LiveSessionViewSet(ModelViewSet):
     def participants(self, request, pk=None):
         """GET /api/v1/sessions/live/<pk>/participants/ — List participants."""
         session = self.get_object()
-        qs = session.participants.select_related("user")
+        qs = session.participants.select_related("user").exclude(user=session.instructor)
         return Response(ParticipantSerializer(qs, many=True).data)
 
 

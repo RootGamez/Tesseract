@@ -15,10 +15,12 @@ interface LiveQuestion {
   duration_s: number;
 }
 
+type ChannelType = 'sessions' | 'chat' | 'board' | 'presentations' | 'gamification';
+
 interface StudentQuizViewProps {
   sessionId: string;
   stageId?: string;
-  sendMessage: (channel: string, event: string, payload: any) => void;
+  sendMessage: (channel: ChannelType, event: string, payload: any) => void;
 }
 
 type QuestionState = 'get-ready' | 'question' | 'answered';
@@ -49,7 +51,6 @@ export default function StudentQuizView({ sendMessage }: StudentQuizViewProps) {
   const [countdown, setCountdown] = useState(3);
   const [timeLeft, setTimeLeft] = useState(20);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [correctAnswers, setCorrectAnswers] = useState(0);
   const [totalAnswered, setTotalAnswered] = useState(0);
 
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -165,7 +166,7 @@ export default function StudentQuizView({ sendMessage }: StudentQuizViewProps) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 px-6 py-3 shrink-0">
         <span className="bg-white/15 px-3.5 py-1.5 rounded-xl font-bold text-xs tracking-wider">
-          {correctAnswers} correctas · {totalAnswered} respondidas
+          {totalAnswered} respondida{totalAnswered !== 1 ? 's' : ''}
         </span>
         <div className="flex items-center gap-1.5">
           <Award className="w-4 h-4 text-[#FFA600]" />
@@ -348,11 +349,11 @@ export default function StudentQuizView({ sendMessage }: StudentQuizViewProps) {
                   <p className="text-red-400 font-bold">Sin respuesta (tiempo agotado)</p>
                 ) : (
                   <div className="flex items-center justify-center gap-2 mt-1">
-                    <div className={`w-7 h-7 rounded-lg ${SHAPES[selectedAnswer]?.activeBg} flex items-center justify-center text-xs font-bold`}>
-                      {SHAPES[selectedAnswer]?.shape}
+                    <div className={`w-7 h-7 rounded-lg ${SHAPES[selectedAnswer as number]?.activeBg} flex items-center justify-center text-xs font-bold`}>
+                      {SHAPES[selectedAnswer as number]?.shape}
                     </div>
                     <span className="text-white font-semibold">
-                      {currentQuestion.options[selectedAnswer]?.text}
+                      {currentQuestion.options[selectedAnswer as number]?.text}
                     </span>
                   </div>
                 )}

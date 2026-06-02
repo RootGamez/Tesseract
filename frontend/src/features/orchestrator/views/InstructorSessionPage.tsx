@@ -143,6 +143,7 @@ export default function InstructorSessionPage() {
           name: p.display_name,
           points: p.points,
           online: p.connection_status === 'ONLINE',
+          isInstructor: p.user?.id === session.instructor,
         }));
       } catch (err) {
         console.error('Error fetching participants:', err);
@@ -363,8 +364,6 @@ export default function InstructorSessionPage() {
       description: question.question_text.slice(0, 60) + (question.question_text.length > 60 ? '...' : ''),
     });
   };
-
-  const handleLaunchQuiz = () => handleLaunchQuizQuestion(0);
 
   const handleSelectStageType = (stageType: string) => {
     setNewStageType(stageType);
@@ -629,7 +628,7 @@ export default function InstructorSessionPage() {
                 <TabsTrigger value="estudiantes" className="flex-1 text-xs">
                   Estudiantes
                   <Badge className="ml-1.5 h-4 px-1 text-[10px] bg-primary text-primary-foreground border-0">
-                    {participants.filter(p => p.online).length}
+                    {participants.filter(p => p.online && !p.isInstructor).length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -672,7 +671,7 @@ export default function InstructorSessionPage() {
                     className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="">Seleccionar estudiante...</option>
-                    {participants.filter(p => p.online).map(p => (
+                    {participants.filter(p => p.online && !p.isInstructor).map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
@@ -708,6 +707,7 @@ export default function InstructorSessionPage() {
             <TabsContent value="estudiantes" className="flex-1 m-0 overflow-y-auto scrollbar-thin">
               <div className="divide-y divide-border">
                 {participants
+                  .filter(p => !p.isInstructor)
                   .slice()
                   .sort((a, b) => b.points - a.points)
                   .map((p, idx) => (
@@ -815,7 +815,7 @@ export default function InstructorSessionPage() {
           </Button>
           <Button size="sm" className="h-8 text-xs sidebar-gradient border-0 text-white gap-1.5">
             <Users className="w-3.5 h-3.5" />
-            {participants.filter(p => p.online).length} online
+            {participants.filter(p => p.online && !p.isInstructor).length} online
           </Button>
         </div>
       </footer>

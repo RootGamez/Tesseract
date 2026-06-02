@@ -27,6 +27,7 @@ interface Participant {
   name: string;
   online: boolean;
   points: number;
+  isInstructor?: boolean;
 }
 
 interface InstructorQuizMonitorProps {
@@ -74,7 +75,7 @@ export default function InstructorQuizMonitor({ participants, quizLaunched, acti
     return () => window.removeEventListener('quiz-results', onResults);
   }, []);
 
-  const onlinePlayers = participants.filter(p => p.online);
+  const onlinePlayers = participants.filter(p => p.online && !p.isInstructor);
   const respondedIds = new Set((results?.responses ?? []).filter(Boolean).map(r => r.participant_id));
   const totalOnline = onlinePlayers.length;
   const totalAnswered = results?.total_responses ?? 0;

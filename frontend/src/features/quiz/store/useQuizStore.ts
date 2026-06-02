@@ -236,7 +236,7 @@ export const useQuizStore = create<QuizState>((set, get) => {
       set({ isSaving: true });
       try {
         const response = await quizService.listSavedQuizzes();
-        const quizzes = Array.isArray(response) ? response : (response?.results ?? []);
+        const quizzes = Array.isArray(response) ? response : ((response as any)?.results ?? []);
         set({ savedQuizzes: quizzes, isSaving: false });
       } catch (err) {
         console.error('Failed to load saved quizzes from API', err);
