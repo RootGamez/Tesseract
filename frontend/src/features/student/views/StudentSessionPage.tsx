@@ -16,12 +16,13 @@ import { useOrchestratorStore } from '@/features/orchestrator/store/orchestrator
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import PDFStage from '@/features/presentations/components/PDFStage';
 import StudentQuizView from '@/features/quiz/components/StudentQuizView';
+import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'];
 
 export default function StudentSessionPage() {
   const { id } = useParams<{ id: string }>();
-  const { activeScene, points, pointAnimation, clearPointAnimation } = useSceneStore();
+  const { activeScene, points, pointAnimation, clearPointAnimation, rouletteState } = useSceneStore();
   const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, isSilenced } = useChatStore();
   const { user } = useAuthStore();
   const { sendMessage } = useWebSocket(id ?? null, 'student');
@@ -251,6 +252,18 @@ export default function StudentSessionPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── ROULETTE WHEEL OVERLAY ───────────────────────── */}
+      {rouletteState && (
+        <RouletteWheel
+          isStudent={true}
+          open={rouletteState.isOpen}
+          participants={rouletteState.participants}
+          mustStartSpinning={rouletteState.mustSpin}
+          prizeNumber={rouletteState.prizeNumber}
+          winnerName={rouletteState.winnerName}
+        />
+      )}
     </div>
   );
 }

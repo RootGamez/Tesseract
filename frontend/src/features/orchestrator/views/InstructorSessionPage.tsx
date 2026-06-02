@@ -654,8 +654,17 @@ export default function InstructorSessionPage() {
 
               <RouletteWheel
                 open={isRouletteOpen}
-                onClose={() => setIsRouletteOpen(false)}
-                participants={participants.map(p => ({ id: p.id, name: p.name }))}
+                onClose={() => {
+                  setIsRouletteOpen(false);
+                  sendMessage('gamification', 'ROULETTE_CLOSE', {});
+                }}
+                participants={participants.filter(p => !p.isInstructor).map(p => ({ id: p.id, name: p.name }))}
+                onActiveParticipantsChange={(active) => {
+                  sendMessage('gamification', 'ROULETTE_OPEN', { activeParticipants: active });
+                }}
+                onSpinStart={(winnerIndex, winnerId, winnerName) => {
+                  sendMessage('gamification', 'ROULETTE_SPIN', { winnerIndex, winnerId, winnerName });
+                }}
                 onResult={(winnerId) => {
                   sendMessage('gamification', 'ROULETTE_RESULT', { participant_id: winnerId });
                 }}

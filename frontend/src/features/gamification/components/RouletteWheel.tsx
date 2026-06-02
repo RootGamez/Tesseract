@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Wheel } from 'react-custom-roulette';
+import confetti from 'canvas-confetti';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/components/ui/dialog';
 import { Button } from '@/shared/components/ui/button';
+import { ScrollArea } from '@/shared/components/ui/scroll-area';
+import { Input } from '@/shared/components/ui/input';
+import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
+import { Check, Search, Users, Trophy } from 'lucide-react';
+import { cn } from '@/shared/lib/utils';
 
 interface Participant {
   id: string;
@@ -10,90 +16,372 @@ interface Participant {
 
 interface RouletteWheelProps {
   open: boolean;
-  onClose: () => void;
+  onClose?: () => void;
   participants: Participant[];
-  /**
-   * Called when a spin finishes with the selected participant id.
-   */
-  onResult: (winnerId: string) => void;
+  onResult?: (winnerId: string) => void;
+  isStudent?: boolean;
+  mustStartSpinning?: boolean;
+  prizeNumber?: number;
+  winnerName?: string | null;
+  onActiveParticipantsChange?: (active: Participant[]) => void;
+  onSpinStart?: (winnerIndex: number, winnerId: string, winnerName: string) => void;
 }
 
-export default function RouletteWheel({ open, onClose, participants, onResult }: RouletteWheelProps) {
+export default function RouletteWheel({
+  open,
+  onClose,
+  participants,
+  onResult,
+  isStudent = false,
+  mustStartSpinning: propMustSpin,
+  prizeNumber: propPrizeNumber,
+  winnerName: propWinnerName,
+  onActiveParticipantsChange,
+  onSpinStart
+}: RouletteWheelProps) {
   const [mustStartSpinning, setMustStartSpinning] = useState(false);
   const [prizeNumber, setPrizeNumber] = useState(0);
   const [usedIds, setUsedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [localWinner, setLocalWinner] = useState<string | null>(null);
 
-  // Build data for the wheel
-  const data = participants.map((p) => ({
-    option: p.name,
-    style: { backgroundColor: '#ffb400', textColor: '#000' },
-  }));
-
-  // Reset wheel when dialog opens
+  // Sync state when dialog opens or props change
   useEffect(() => {
     if (open) {
-      setMustStartSpinning(false);
-      setPrizeNumber(0);
+      setMustStartSpinning(isStudent ? !!propMustSpin : false);
+      setPrizeNumber(isStudent ? (propPrizeNumber ?? 0) : 0);
       setUsedIds([]);
+      setSelectedIds(participants.map((p) => p.id));
+      setSearchQuery('');
+      setLocalWinner(isStudent ? (propWinnerName ?? null) : null);
     }
-  }, [open]);
+  }, [open, participants, isStudent, propMustSpin, propPrizeNumber, propWinnerName]);
+
+  // Sync changes while open (crucial for student mode during live spin)
+  useEffect(() => {
+    if (isStudent && open) {
+      if (propMustSpin !== undefined) setMustStartSpinning(propMustSpin);
+      if (propPrizeNumber !== undefined) setPrizeNumber(propPrizeNumber);
+      if (propWinnerName !== undefined) setLocalWinner(propWinnerName);
+    }
+  }, [isStudent, open, propMustSpin, propPrizeNumber, propWinnerName]);
+
+  // Broadcast selected active participants list for synchronization
+  useEffect(() => {
+    if (!isStudent && open && onActiveParticipantsChange) {
+      const active = participants.filter((p) => selectedIds.includes(p.id));
+      onActiveParticipantsChange(active);
+    }
+  }, [selectedIds, open, isStudent, participants, onActiveParticipantsChange]);
+
+  // Get active participants for the wheel
+  const activeParticipants = isStudent 
+    ? participants 
+    : participants.filter((p) => selectedIds.includes(p.id));
+
+  // Build data for the wheel using active participants only
+  const data = activeParticipants.map((p, idx) => ({
+    option: p.name,
+    style: {
+      backgroundColor: idx % 2 === 0 ? '#4f46e5' : '#7c3aed', // Indigo & Violet
+      textColor: '#ffffff',
+    },
+  }));
 
   const startSpin = () => {
-    const remaining = participants.filter((p) => !usedIds.includes(p.id));
+    if (isStudent) return;
+
+    // Only spin among active participants that haven't been selected yet
+    const remaining = activeParticipants.filter((p) => !usedIds.includes(p.id));
+    
     if (remaining.length === 0) {
-      // All participants have been selected, reset.
+      // All active participants have been selected, reset used list for active ones.
       setUsedIds([]);
+      const freshRemaining = activeParticipants;
+      if (freshRemaining.length === 0) return;
+      
+      const randomIdx = Math.floor(Math.random() * freshRemaining.length);
+      const winner = freshRemaining[randomIdx];
+      const winnerIndex = activeParticipants.findIndex((p) => p.id === winner.id);
+      setPrizeNumber(winnerIndex);
+      setMustStartSpinning(true);
+      setUsedIds([winner.id]);
+      setLocalWinner(null); // Clear winner text during new spin
+      
+      if (onSpinStart) {
+        onSpinStart(winnerIndex, winner.id, winner.name);
+      }
       return;
     }
+    
     const randomIdx = Math.floor(Math.random() * remaining.length);
     const winner = remaining[randomIdx];
-    const winnerIndex = participants.findIndex((p) => p.id === winner.id);
+    const winnerIndex = activeParticipants.findIndex((p) => p.id === winner.id);
     setPrizeNumber(winnerIndex);
     setMustStartSpinning(true);
-    // Store winner id for callback after spin completes.
     setUsedIds((prev) => [...prev, winner.id]);
+    setLocalWinner(null); // Clear winner text during new spin
+
+    if (onSpinStart) {
+      onSpinStart(winnerIndex, winner.id, winner.name);
+    }
   };
 
   const handleStopSpinning = () => {
-    const winner = participants[prizeNumber];
+    const winner = activeParticipants[prizeNumber];
     if (winner) {
-      onResult(winner.id);
+      setLocalWinner(winner.name);
+      if (onResult) {
+        onResult(winner.id);
+      }
+      
+      // Beautiful burst of confetti!
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#4f46e5', '#7c3aed', '#ec4899', '#3b82f6', '#10b981']
+      });
     }
     setMustStartSpinning(false);
   };
 
+  // Filter participants for the list view based on search query
+  const filteredParticipants = participants.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[500px] bg-background text-foreground border border-border">
+    <Dialog open={open} onOpenChange={(v) => {
+      if (isStudent) return; // Prevent students from closing the modal manually
+      if (!v && onClose) onClose();
+    }}>
+      <DialogContent 
+        onPointerDownOutside={(e) => isStudent && e.preventDefault()}
+        onEscapeKeyDown={(e) => isStudent && e.preventDefault()}
+        className={cn(
+          "bg-zinc-950/95 backdrop-blur-md border border-indigo-500/20 shadow-[0_0_50px_rgba(99,102,241,0.15)] text-zinc-100 transition-all duration-300",
+          isStudent 
+            ? "sm:max-w-[480px] w-[90vw] [&>button]:hidden p-6" 
+            : "sm:max-w-[800px] w-[95vw] md:max-w-[850px]"
+        )}
+      >
         <DialogHeader>
-          <DialogTitle>Ruleta de Participantes</DialogTitle>
-          <DialogDescription>
-            Gira la rueda para seleccionar aleatoriamente a un estudiante. Cada estudiante solo puede ser seleccionado una
-            vez por sesión.
+          <DialogTitle className="text-2xl font-extrabold tracking-tight text-center md:text-left bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-500 bg-clip-text text-transparent">
+            {isStudent ? 'Sorteo en Vivo' : 'Ruleta de Participantes'}
+          </DialogTitle>
+          <DialogDescription className="text-zinc-400 text-xs">
+            {isStudent 
+              ? 'El docente ha activado el sorteo de participación en tiempo real.' 
+              : 'Gira la rueda para seleccionar aleatoriamente a un estudiante. Selecciona a los estudiantes que deseas incluir en esta ronda.'
+            }
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col items-center gap-4 py-4">
-          {participants.length > 0 ? (
-            <Wheel
-              mustStartSpinning={mustStartSpinning}
-              prizeNumber={prizeNumber}
-              data={data}
-              backgroundColors={["#ffefc5", "#f7d27c"]}
-              textColors={["#000", "#000"]}
-              onStopSpinning={handleStopSpinning}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">No hay participantes disponibles.</p>
+
+        <div className={cn(
+          "flex gap-6 py-2 transition-all duration-300",
+          isStudent ? "flex-col items-center" : "flex-col md:flex-row"
+        )}>
+          {/* Left Panel: Participant list selection (Only for Instructors) */}
+          {!isStudent && (
+            <div className="w-full md:w-72 flex flex-col gap-3 shrink-0">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-indigo-400" />
+                  Estudiantes ({selectedIds.length}/{participants.length})
+                </h3>
+              </div>
+
+              {/* Search filter */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+                <Input
+                  placeholder="Buscar estudiante..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 h-9 text-xs bg-zinc-900 border-zinc-800 focus-visible:ring-indigo-500 text-zinc-100"
+                  disabled={mustStartSpinning}
+                />
+              </div>
+
+              {/* Quick selectors */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-[11px] h-8 bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800 hover:text-white"
+                  onClick={() => {
+                    const allIds = participants.map((p) => p.id);
+                    setSelectedIds(allIds);
+                  }}
+                  disabled={mustStartSpinning || selectedIds.length === participants.length}
+                >
+                  Seleccionar todos
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-[11px] h-8 bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800 hover:text-white"
+                  onClick={() => setSelectedIds([])}
+                  disabled={mustStartSpinning || selectedIds.length === 0}
+                >
+                  Limpiar
+                </Button>
+              </div>
+
+              {/* Scrollable list */}
+              <ScrollArea className="h-[280px] border border-zinc-800 rounded-lg p-1 bg-zinc-950/40">
+                {filteredParticipants.length > 0 ? (
+                  <div className="space-y-0.5">
+                    {filteredParticipants.map((p) => {
+                      const isSelected = selectedIds.includes(p.id);
+                      const isUsed = usedIds.includes(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          disabled={mustStartSpinning}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedIds((prev) => prev.filter((id) => id !== p.id));
+                            } else {
+                              setSelectedIds((prev) => [...prev, p.id]);
+                            }
+                          }}
+                          className={cn(
+                            "w-full flex items-center justify-between p-2 rounded-md transition-colors text-left text-xs",
+                            isSelected
+                              ? "hover:bg-zinc-800/50"
+                              : "opacity-40 hover:bg-zinc-900"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <Avatar className="h-7 w-7 shrink-0">
+                              <AvatarFallback className="text-[10px] bg-indigo-600 text-white font-bold">
+                                {p.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium truncate text-zinc-200">{p.name}</p>
+                              {isUsed && (
+                                <span className="text-[8px] text-zinc-400 bg-zinc-800 px-1 py-0.2 rounded font-mono">
+                                  Ya participó
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="shrink-0 ml-2">
+                            {isSelected ? (
+                              <div className="w-4 h-4 rounded border border-indigo-500 bg-indigo-600 text-white flex items-center justify-center">
+                                <Check className="w-3 h-3 text-white stroke-[3px]" />
+                              </div>
+                            ) : (
+                              <div className="w-4 h-4 rounded border border-zinc-700 bg-zinc-900" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500 text-center py-10">
+                    No se encontraron estudiantes
+                  </p>
+                )}
+              </ScrollArea>
+            </div>
           )}
-          <Button onClick={startSpin} disabled={mustStartSpinning || participants.length === 0} className="mt-2">
-            {mustStartSpinning ? 'Girando…' : 'Girar'}
-          </Button>
+
+          {/* Right Panel: Roulette Wheel */}
+          <div className={cn(
+            "flex-1 flex flex-col items-center justify-center gap-4 py-2 min-h-[320px] transition-all",
+            !isStudent && "border-l border-zinc-800/60 pl-6"
+          )}>
+            {isStudent && (
+              <div className="text-center mb-1">
+                <p className="text-xs text-zinc-400 font-semibold tracking-wider uppercase">
+                  {mustStartSpinning 
+                    ? "¡Girando la ruleta!" 
+                    : localWinner 
+                      ? "Tenemos un ganador" 
+                      : "Esperando sorteo..."
+                  }
+                </p>
+              </div>
+            )}
+
+            {activeParticipants.length > 0 ? (
+              <div className="flex flex-col items-center gap-4">
+                {/* Glowing neon aura behind the wheel */}
+                <div className="scale-90 sm:scale-100 origin-center max-w-full overflow-hidden flex items-center justify-center p-2 rounded-full bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.15)]">
+                  <Wheel
+                    mustStartSpinning={mustStartSpinning}
+                    prizeNumber={prizeNumber}
+                    data={data}
+                    backgroundColors={["#4f46e5", "#7c3aed"]}
+                    textColors={["#ffffff", "#ffffff"]}
+                    outerBorderColor="#1e1b4b"
+                    outerBorderWidth={6}
+                    innerRadius={15}
+                    innerBorderColor="#09090b"
+                    innerBorderWidth={5}
+                    radiusLineColor="#1e1b4b"
+                    radiusLineWidth={1.5}
+                    onStopSpinning={handleStopSpinning}
+                  />
+                </div>
+
+                {/* Pulsing Winner Notification Banner */}
+                {localWinner && (
+                  <div className="w-full max-w-[280px] p-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 shadow-[0_0_20px_rgba(99,102,241,0.1)] text-center animate-pulse">
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-indigo-300 font-medium mb-0.5">
+                      <Trophy className="w-3.5 h-3.5 text-yellow-500" />
+                      ¡Estudiante Seleccionado!
+                    </div>
+                    <div className="text-base font-extrabold bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent truncate">
+                      {localWinner}
+                    </div>
+                  </div>
+                )}
+
+                {/* Spin controls for instructor only */}
+                {!isStudent && (
+                  <Button
+                    onClick={startSpin}
+                    disabled={mustStartSpinning || activeParticipants.length === 0}
+                    className="mt-2 w-44 py-5 font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.55)] border-0 transition-all duration-300 rounded-xl"
+                  >
+                    {mustStartSpinning ? 'Girando…' : 'Girar Ruleta'}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 text-center max-w-[260px] py-10">
+                <Users className="w-10 h-10 text-zinc-700 animate-pulse" />
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  {isStudent 
+                    ? "Esperando que el instructor agregue participantes a la ruleta..."
+                    : "Selecciona al menos un estudiante de la lista lateral para activar la ruleta."
+                  }
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={mustStartSpinning}>
-            Cancelar
-          </Button>
-        </DialogFooter>
+
+        {/* Footer actions for instructor only */}
+        {!isStudent && (
+          <DialogFooter className="border-t border-zinc-800/80 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={onClose} 
+              disabled={mustStartSpinning}
+              className="bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

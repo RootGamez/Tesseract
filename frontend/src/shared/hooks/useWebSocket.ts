@@ -265,6 +265,35 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
       case 'SPINNER_RESULT':
         a.triggerSpinner(payload);
         break;
+      case 'ROULETTE_OPEN':
+        a.setSceneState({
+          rouletteState: {
+            isOpen: true,
+            participants: payload.activeParticipants || [],
+            mustSpin: false,
+            prizeNumber: 0,
+            winnerId: null,
+            winnerName: null,
+          },
+        });
+        break;
+      case 'ROULETTE_SPIN': {
+        const currentRoulette = useSceneStore.getState().rouletteState;
+        a.setSceneState({
+          rouletteState: {
+            isOpen: true,
+            participants: currentRoulette?.participants || [],
+            mustSpin: true,
+            prizeNumber: payload.winnerIndex,
+            winnerId: payload.winnerId,
+            winnerName: payload.winnerName || null,
+          },
+        });
+        break;
+      }
+      case 'ROULETTE_CLOSE':
+        a.setSceneState({ rouletteState: null });
+        break;
       case 'TIMER_STARTED':
         a.triggerTimer(payload);
         break;
