@@ -8,8 +8,23 @@ export interface SceneState {
   points: number;
   pointAnimation: { amount: number; total: number; id: number } | null;
   spinnerData: any | null;
-  timerData: any | null;
+  timerData: {
+    timerId: string;
+    label: string;
+    endTimestampUtc: string | null;
+    durationSeconds: number;
+    isPaused: boolean;
+    remainingSeconds: number;
+  } | null;
   canDraw: boolean;
+  rouletteState: {
+    isOpen: boolean;
+    participants: { id: string; name: string }[];
+    mustSpin: boolean;
+    prizeNumber: number;
+    winnerId: string | null;
+    winnerName: string | null;
+  } | null;
 
   setSceneState: (payload: Partial<SceneState>) => void;
   setCanDraw: (canDraw: boolean) => void;
@@ -29,6 +44,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   spinnerData: null,
   timerData: null,
   canDraw: false,
+  rouletteState: null,
 
   setSceneState: (payload) => set((state) => ({ ...state, ...payload })),
   setCanDraw: (canDraw) => set({ canDraw }),

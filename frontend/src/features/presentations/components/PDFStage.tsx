@@ -26,6 +26,9 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
   const transformRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const pdfRef        = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  // Generación de render: invalida renders que quedaron obsoletos al cambiar de
+  // página o por un resize concurrente (evita el "same canvas" de pdf.js).
+  const renderSeqRef  = useRef(0);
 
   // Zoom/pan live in refs so wheel/drag don't trigger React re-renders
   const zoomRef        = useRef(1);
@@ -45,6 +48,10 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
 
   const localPage   = role === 'instructor' ? (controlledPage ?? 1) : userPage;
   const isOutOfSync = role === 'student' && userPage !== teacherPage;
+
+  // Ref para que el ResizeObserver lea la página actual sin recrearse en cada cambio.
+  const localPageRef = useRef(localPage);
+  useEffect(() => { localPageRef.current = localPage; }, [localPage]);
 
   // ── Transform helpers ────────────────────────────────────────────────────────
   const applyTransform = useCallback(() => {
@@ -151,14 +158,23 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
     const canvas = canvasRef.current;
     if (!pdf || !canvas || pageNum < 1 || pageNum > pdf.numPages) return;
 
+    // Marca esta llamada como la más reciente.
+    const seq = ++renderSeqRef.current;
+
+    // Cancela el render en curso y espera a que libere el canvas.
     if (renderTaskRef.current) {
       renderTaskRef.current.cancel();
+      try { await renderTaskRef.current.promise; } catch { /* RenderingCancelledException */ }
       renderTaskRef.current = null;
     }
+    // Si otra llamada nos adelantó mientras esperábamos, abortamos.
+    if (seq !== renderSeqRef.current) return;
 
     setIsRendering(true);
     try {
       const page = await pdf.getPage(pageNum);
+      if (seq !== renderSeqRef.current) return; // superado por un render más nuevo
+
       const containerWidth = containerRef.current?.clientWidth || 800;
       const pagePadding    = 32;
       const targetWidth    = Math.max(containerWidth - pagePadding, 320);
@@ -179,12 +195,13 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
       const renderTask = page.render({ canvasContext: context, viewport });
       renderTaskRef.current = renderTask;
       await renderTask.promise;
+      if (seq !== renderSeqRef.current) return;
 
       if (!keepView) centerCanvas();
     } catch (err: any) {
       if (err?.name !== 'RenderingCancelledException') setErrorMessage('Error al renderizar la página.');
     } finally {
-      setIsRendering(false);
+      if (seq === renderSeqRef.current) setIsRendering(false);
     }
   }, [centerCanvas]);
 
@@ -192,15 +209,20 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
     if (pageCount > 0) void renderPage(localPage, false);
   }, [localPage, pageCount, renderPage]);
 
-  // Re-render on container resize (keep zoom/pan position)
+  // Re-render on container resize (keep zoom/pan position).
+  // No depende de localPage para no recrearse al cambiar de página; ignora el
+  // primer disparo de observe() (que reportaría el tamaño inicial y lanzaría un
+  // render concurrente innecesario).
   useEffect(() => {
     if (!containerRef.current) return;
+    let first = true;
     const observer = new ResizeObserver(() => {
-      if (pageCount > 0) void renderPage(localPage, true);
+      if (first) { first = false; return; }
+      if (pageCount > 0) void renderPage(localPageRef.current, true);
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [localPage, pageCount, renderPage]);
+  }, [pageCount, renderPage]);
 
   // ── Mouse wheel zoom ─────────────────────────────────────────────────────────
   useEffect(() => {

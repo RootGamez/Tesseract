@@ -71,8 +71,10 @@ export default function InstructorQuizFlow({
     setIsLoading(true);
     try {
       const full = await quizService.getSavedQuiz(quiz.id);
-      const mapped: Question[] = (full.questions || []).map((q: any) => ({
-        id: q.id,
+      // IDs temporales (prefijo 'q_') → el backend crea copias nuevas en la sesión
+      // en vez de intentar editar las preguntas de la plantilla.
+      const templateQuestions: Question[] = (full.questions || []).map((q: any, qi: number) => ({
+        id: `q_tpl_${qi}`,
         question_text: q.text ?? q.question_text,
         options: (q.options || []).map((o: any, i: number) => ({
           id: o.id || `o_${q.id}_${i}`,
@@ -80,9 +82,22 @@ export default function InstructorQuizFlow({
           is_correct: o.is_correct === true,
         })),
       }));
+
+      // Clonar las preguntas de la plantilla dentro de la sesión/stage. Sin esto,
+      // sus ids pertenecen al Quiz guardado (session=None) y al lanzarlas el
+      // backend no las encuentra (filtra por session_id) → el alumno no recibe nada.
+      let sessionQuestions = templateQuestions;
+      if (sessionId && sessionId !== 'demo' && sessionId !== 'undefined') {
+        try {
+          sessionQuestions = await quizService.syncQuestions(sessionId, templateQuestions, stageId);
+        } catch (e) {
+          console.error('No se pudieron clonar las preguntas del quiz en la sesión', e);
+        }
+      }
+
       setSelectedQuiz(full);
-      setLoadedQuestions(mapped);
-      useQuizStore.setState({ questions: mapped });
+      setLoadedQuestions(sessionQuestions);
+      useQuizStore.setState({ questions: sessionQuestions });
       setStep('preview');
     } catch (e) {
       console.error(e);

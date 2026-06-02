@@ -44,6 +44,8 @@ import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import InstructorQuizFlow from '@/features/quiz/components/InstructorQuizFlow';
 import { useQuizStore } from '@/features/quiz/store/useQuizStore';
 import { quizService } from '@/shared/services/quizService';
+import { useSceneStore } from '@/features/student/store/sceneStore';
+import TimerWidget from '@/features/gamification/components/TimerWidget';
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
@@ -66,6 +68,8 @@ export default function InstructorSessionPage() {
   const [points, setPoints] = useState('10');
   const [selectedParticipant, setSelectedParticipant] = useState('');
   const [sessionState, setSessionState] = useState<'LIVE' | 'PAUSED'>('LIVE');
+  const [isTimerConfigOpen, setIsTimerConfigOpen] = useState(false);
+  const { timerData } = useSceneStore();
 
   const [templateId, setTemplateId] = useState<string>('');
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -338,7 +342,7 @@ export default function InstructorSessionPage() {
     sendMessage('gamification', 'POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
   };
 
-  const handleTimer = () => sendMessage('gamification', 'TIMER_STARTED', { duration_seconds: 60, label: 'Actividad' });
+  const handleTimer = () => setIsTimerConfigOpen(true);
 
   const handlePdfPageChange = (page: number) => {
     setCurrentPdfPage(page);
@@ -654,8 +658,17 @@ export default function InstructorSessionPage() {
 
               <RouletteWheel
                 open={isRouletteOpen}
-                onClose={() => setIsRouletteOpen(false)}
-                participants={participants.map(p => ({ id: p.id, name: p.name }))}
+                onClose={() => {
+                  setIsRouletteOpen(false);
+                  sendMessage('gamification', 'ROULETTE_CLOSE', {});
+                }}
+                participants={participants.filter(p => !p.isInstructor).map(p => ({ id: p.id, name: p.name }))}
+                onActiveParticipantsChange={(active) => {
+                  sendMessage('gamification', 'ROULETTE_OPEN', { activeParticipants: active });
+                }}
+                onSpinStart={(winnerIndex, winnerId, winnerName) => {
+                  sendMessage('gamification', 'ROULETTE_SPIN', { winnerIndex, winnerId, winnerName });
+                }}
                 onResult={(winnerId) => {
                   sendMessage('gamification', 'ROULETTE_RESULT', { participant_id: winnerId });
                 }}
@@ -1053,6 +1066,15 @@ export default function InstructorSessionPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── TIMER CONFIGURATION & FLOATING CONTROLLER ────── */}
+      <TimerWidget
+        role="instructor"
+        timerData={timerData}
+        sendMessage={sendMessage}
+        openConfig={isTimerConfigOpen}
+        onOpenConfigChange={setIsTimerConfigOpen}
+      />
     </div>
   );
 }

@@ -18,6 +18,7 @@ from django.core.cache import cache
 from core.websocket_events import (
     POINTS_AWARDED, EMOJI_FIRED, TIMER_STARTED, TIMER_PAUSED, TIMER_CANCELLED,
     SPINNER_RESULT, QUIZ_LAUNCHED, QUIZ_RESULTS, QUIZ_RESPONSE, WS_ERROR,
+    ROULETTE_OPEN, ROULETTE_SPIN, ROULETTE_CLOSE,
 )
 from core.throttling import EmojiRateLimit, WebSocketMessageThrottle
 
@@ -87,6 +88,12 @@ class GamificationConsumer(AsyncWebsocketConsumer):
                 await self._handle_timer_cancelled(payload)
             elif event_type == QUIZ_LAUNCHED:
                 await self._handle_quiz_launched(payload)
+            elif event_type == ROULETTE_OPEN:
+                await self._handle_roulette_open(payload)
+            elif event_type == ROULETTE_SPIN:
+                await self._handle_roulette_spin(payload)
+            elif event_type == ROULETTE_CLOSE:
+                await self._handle_roulette_close(payload)
         else:
             await self.send(text_data=json.dumps({
                 "event": WS_ERROR,
@@ -197,7 +204,14 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         if timer:
             await self.channel_layer.group_send(
                 self.game_group,
-                {"type": "timer.paused", "event": TIMER_PAUSED, "payload": {"timer_id": timer_id}},
+                {
+                    "type": "timer.paused",
+                    "event": TIMER_PAUSED,
+                    "payload": {
+                        "timer_id": timer_id,
+                        "remaining_seconds": timer.remaining_seconds or 0
+                    }
+                },
             )
 
     async def _handle_timer_cancelled(self, payload):
@@ -213,6 +227,12 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         question_id = payload.get("question_id")
         question = await self._get_question(question_id)
         if not question:
+            logger.warning("quiz_launch_question_not_found",
+                           session_id=self.session_id, question_id=str(question_id))
+            await self.send(text_data=json.dumps({
+                "event": WS_ERROR,
+                "payload": {"message": "No se pudo lanzar la pregunta: no pertenece a esta sesión."},
+            }))
             return
         await self._mark_question_launched(question)
         await self.channel_layer.group_send(
@@ -248,6 +268,36 @@ class GamificationConsumer(AsyncWebsocketConsumer):
             },
         )
 
+    async def _handle_roulette_open(self, payload):
+        await self.channel_layer.group_send(
+            self.game_group,
+            {
+                "type": "roulette.open",
+                "event": ROULETTE_OPEN,
+                "payload": payload,
+            },
+        )
+
+    async def _handle_roulette_spin(self, payload):
+        await self.channel_layer.group_send(
+            self.game_group,
+            {
+                "type": "roulette.spin",
+                "event": ROULETTE_SPIN,
+                "payload": payload,
+            },
+        )
+
+    async def _handle_roulette_close(self, payload):
+        await self.channel_layer.group_send(
+            self.game_group,
+            {
+                "type": "roulette.close",
+                "event": ROULETTE_CLOSE,
+                "payload": payload,
+            },
+        )
+
     # ── Group message handlers ─────────────────────────────────────────────────
 
     async def emoji_fired(self, event):
@@ -272,6 +322,15 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     async def quiz_results(self, event):
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def roulette_open(self, event):
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def roulette_spin(self, event):
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def roulette_close(self, event):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     # ── DB helpers ─────────────────────────────────────────────────────────────
@@ -352,7 +411,12 @@ class GamificationConsumer(AsyncWebsocketConsumer):
             timer.state = state
             if state == "PAUSED":
                 timer.paused_at = timezone.now()
-            timer.save(update_fields=["state", "paused_at"])
+                if timer.end_timestamp_utc:
+                    delta = timer.end_timestamp_utc - timezone.now()
+                    timer.remaining_seconds = max(0, int(delta.total_seconds()))
+                timer.save(update_fields=["state", "paused_at", "remaining_seconds"])
+            else:
+                timer.save(update_fields=["state"])
             return timer
         except Timer.DoesNotExist:
             return None
