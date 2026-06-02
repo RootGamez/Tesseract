@@ -14,7 +14,9 @@ CANVAS_DRAW = "canvas.draw"
 PDF_PAGE_CHANGED = "PDF_PAGE_CHANGED"
 
 # ── Pizarra colaborativa ──────────────────────────────────────────────────────
-BOARD_UPDATE = "BOARD_UPDATE"
+BOARD_UPDATE = "BOARD_UPDATE"   # (legacy) snapshot completo
+SCENE_INIT = "SCENE_INIT"       # sync completo: solo al entrar / reconectar
+SCENE_UPDATE = "SCENE_UPDATE"   # delta: solo elementos cambiados (frecuente)
 LASER_MOVE = "LASER_MOVE"
 
 # ── Gamificación ──────────────────────────────────────────────────────────────

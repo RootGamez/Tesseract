@@ -202,8 +202,12 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         }
         break;
 
+      // Pizarra: SCENE_INIT (full sync) y SCENE_UPDATE (delta) — modelo nativo Excalidraw.
+      // BOARD_UPDATE se mantiene por compatibilidad (snapshot completo legacy).
+      case 'SCENE_INIT':
+      case 'SCENE_UPDATE':
       case 'BOARD_UPDATE':
-        window.dispatchEvent(new CustomEvent('board-update', { detail: payload }));
+        window.dispatchEvent(new CustomEvent('board-update', { detail: { ...payload, event } }));
         break;
       case 'LASER_MOVE':
         window.dispatchEvent(new CustomEvent('laser-move', { detail: payload }));

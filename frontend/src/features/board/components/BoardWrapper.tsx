@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { Excalidraw } from '@excalidraw/excalidraw';
+import { Excalidraw, reconcileElements } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import throttle from 'lodash.throttle';
 import { useSceneStore } from '@/features/student/store/sceneStore';
@@ -20,10 +20,16 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
     const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
     const excalidrawAPIRef = useRef<any>(null);
 
-    // isRemoteUpdate: while true, onChange is silenced
-    const isRemoteUpdate = useRef(false);
-    // Track whether we've received the first full_sync for this mount
+    // Track whether we've received the first SCENE_INIT for this mount.
+    // We don't broadcast our own edits until we know the base scene.
     const isInitialized = useRef(false);
+
+    // Última versión que hemos emitido o recibido por elemento (id → version).
+    // Sustituye al "lock global": evita re-emitir lo que ya sincronizamos
+    // y resuelve conflictos por versión (modelo nativo de Excalidraw).
+    const syncedVersions = useRef<Map<string, number>>(new Map());
+    // IDs de archivos (imágenes) ya enviados, para no re-subirlos en cada delta.
+    const sentFileIds = useRef<Set<string>>(new Set());
 
     const containerRef = useRef<HTMLDivElement>(null);
     const canDraw = useSceneStore((state) => state.canDraw);
@@ -40,10 +46,51 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
       [userId: string]: { x: number; y: number; name: string; timestamp: number };
     }>({});
 
-    // 100ms throttle for board element changes (RF-BOARD-01)
+    // Track last received remote update (for fallback re-sync)
+    const lastRemoteUpdateAt = useRef(0);
+
+    // ── Helpers de versionado ──────────────────────────────────────────────────
+
+    /** Devuelve los elementos cuya versión es más nueva que la última sincronizada. */
+    const collectSyncable = (elements: readonly any[]): any[] => {
+      const out: any[] = [];
+      for (const el of elements) {
+        const known = syncedVersions.current.get(el.id);
+        if (known === undefined || el.version > known) {
+          out.push(el);
+        }
+      }
+      return out;
+    };
+
+    /** Marca elementos como sincronizados (no se re-emitirán). */
+    const markSynced = (elements: readonly any[]) => {
+      for (const el of elements) {
+        const known = syncedVersions.current.get(el.id);
+        if (known === undefined || el.version > known) {
+          syncedVersions.current.set(el.id, el.version);
+        }
+      }
+    };
+
+    /** Extrae solo los files referenciados por estos elementos y aún no enviados. */
+    const collectNewFiles = (elements: readonly any[], allFiles: any): any => {
+      if (!allFiles) return {};
+      const result: any = {};
+      for (const el of elements) {
+        const fid = el.fileId;
+        if (fid && allFiles[fid] && !sentFileIds.current.has(fid)) {
+          result[fid] = allFiles[fid];
+          sentFileIds.current.add(fid);
+        }
+      }
+      return result;
+    };
+
+    // ── Envío de deltas (throttle 100ms — RF-BOARD-01) ──────────────────────────
     const throttledSend = useRef(
       throttle((elements: any[], appState: any, stageId: string, files: any) => {
-        sendMessage('board', 'BOARD_UPDATE', { elements, appState, stage_id: stageId, files });
+        sendMessage('board', 'SCENE_UPDATE', { elements, appState, stage_id: stageId, files });
       }, 100)
     ).current;
 
@@ -68,7 +115,7 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
       excalidrawAPIRef.current = excalidrawAPI;
     }, [excalidrawAPI]);
 
-    // Expose flushSnapshot to parent: sends current state immediately and waits
+    // Expose flushSnapshot to parent: envía toda la escena antes de cambiar de etapa
     useImperativeHandle(ref, () => ({
       flushSnapshot: () => {
         return new Promise<void>((resolve) => {
@@ -78,30 +125,36 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
             resolve();
             return;
           }
-          throttledSend.cancel(); // cancel any pending debounced call
-          const elements = api.getSceneElements();
+          throttledSend.cancel();
+          const elements = api.getSceneElementsIncludingDeleted();
           const appState = api.getAppState();
           const files = api.getFiles();
-          sendMessage('board', 'BOARD_UPDATE', {
+          markSynced(elements);
+          sendMessage('board', 'SCENE_UPDATE', {
             elements: Array.from(elements),
             appState,
             stage_id: stageId,
             files,
           });
-          // Give the WebSocket 200ms to deliver to the server before we switch stage
+          // Dar 200ms al WebSocket para entregar antes de cambiar de escena
           setTimeout(resolve, 200);
         });
       },
     }));
 
-    // onChange: called by Excalidraw on every user edit
+    // onChange: llamado por Excalidraw en cada edición local
     const onChange = (elements: readonly any[], appState: any, files: any) => {
       if (!isMounted.current) return;
       if (role === 'student' && !canDraw) return;
-      if (isRemoteUpdate.current) return;
       if (!isInitialized.current) return;
 
-      throttledSend(Array.from(elements), appState, activeStageIdRef.current!, files);
+      // Solo emitir los elementos que cambiaron (delta), no toda la escena
+      const syncable = collectSyncable(elements);
+      if (syncable.length === 0) return;
+
+      markSynced(syncable);
+      const newFiles = collectNewFiles(syncable, files);
+      throttledSend(syncable, appState, activeStageIdRef.current!, newFiles);
     };
 
     const onPointerUpdate = (payload: any) => {
@@ -111,55 +164,55 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
       }
     };
 
-    // Request full board sync when API is ready
+    // Pedir sync completo (SCENE_INIT) cuando el API y la escena están listos
     useEffect(() => {
       if (!excalidrawAPI || !activeStageId) return;
-      console.log(`[BoardWrapper] Requesting BOARD_SYNC for stage ${activeStageId}`);
+      console.log(`[BoardWrapper] Requesting SCENE_INIT for stage ${activeStageId}`);
       isInitialized.current = false;
+      syncedVersions.current.clear();
+      sentFileIds.current.clear();
       sendMessage('board', 'REQUEST_BOARD_SYNC', { stage_id: activeStageId });
     }, [excalidrawAPI, activeStageId]);
 
-    // Listen to remote board updates
+    // Aplicar actualizaciones remotas (SCENE_INIT / SCENE_UPDATE) vía reconcile
     useEffect(() => {
       const handleRemoteUpdate = (e: Event) => {
-        // detail IS the payload: { elements, appState, files, is_full_sync, stage_id? }
         const data = (e as CustomEvent<any>).detail;
         const api = excalidrawAPIRef.current;
-
         if (!api || !data) return;
 
-        // Ignore updates for other stages
+        // Ignorar updates de otras escenas
         if (data.stage_id && data.stage_id !== activeStageIdRef.current) {
-          console.log(`[BoardWrapper] Skipping update for stage ${data.stage_id} (active: ${activeStageIdRef.current})`);
           return;
         }
 
-        const elements = data.elements || [];
-        console.log(`[BoardWrapper] Applying remote update — ${elements.length} elements, is_full_sync: ${data.is_full_sync}`);
+        const isInit = data.event === 'SCENE_INIT' || data.is_full_sync;
+        const remoteElements = data.elements || [];
+        lastRemoteUpdateAt.current = Date.now();
 
-        isRemoteUpdate.current = true;
-
-        // Load image files into Excalidraw cache
+        // Cargar imágenes en la caché de Excalidraw
         if (data.files && Object.keys(data.files).length > 0) {
           try {
             api.addFiles(Object.values(data.files));
+            for (const fid of Object.keys(data.files)) sentFileIds.current.add(fid);
           } catch (err) {
             console.error('[BoardWrapper] addFiles error:', err);
           }
         }
 
-        api.updateScene({ elements });
+        // Reconciliar por versión (sin lock global): elige la versión más alta por elemento
+        const localElements = api.getSceneElementsIncludingDeleted();
+        const reconciled = reconcileElements(localElements, remoteElements as any, api.getAppState());
 
-        // Release lock after two animation frames (Excalidraw needs them to process)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            isRemoteUpdate.current = false;
-            if (data.is_full_sync) {
-              isInitialized.current = true;
-              console.log(`[BoardWrapper] Stage ${activeStageIdRef.current} initialized ✓`);
-            }
-          });
-        });
+        // Marcar lo recibido como sincronizado para no re-emitirlo en onChange
+        markSynced(reconciled);
+
+        api.updateScene({ elements: reconciled });
+
+        if (isInit) {
+          isInitialized.current = true;
+          console.log(`[BoardWrapper] Stage ${activeStageIdRef.current} initialized ✓ (${reconciled.length} elements)`);
+        }
       };
 
       const handleLaserMove = (e: Event) => {
@@ -183,6 +236,21 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
         window.removeEventListener('laser-move', handleLaserMove);
       };
     }, [excalidrawAPI]);
+
+    // Red de seguridad: si un estudiante no recibe nada en 5s, re-pide SCENE_INIT.
+    // Con reconcile es idempotente (no parpadea, deduplica por versión).
+    useEffect(() => {
+      if (role !== 'student') return;
+      const interval = setInterval(() => {
+        const stageId = activeStageIdRef.current;
+        const api = excalidrawAPIRef.current;
+        if (!stageId || !api) return;
+        if (Date.now() - lastRemoteUpdateAt.current > 5000) {
+          sendMessage('board', 'REQUEST_BOARD_SYNC', { stage_id: stageId });
+        }
+      }, 5000);
+      return () => clearInterval(interval);
+    }, [role, sendMessage]);
 
     // Cleanup stale laser cursors
     useEffect(() => {
