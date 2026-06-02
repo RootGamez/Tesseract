@@ -22,7 +22,8 @@ const StudentsPage         = lazy(() => import('@/features/students/views/Studen
 const SettingsPage         = lazy(() => import('@/features/settings/views/SettingsPage'));
 const InstructorSessionPage = lazy(() => import('@/features/orchestrator/views/InstructorSessionPage'));
 
-// Student session
+// Student pages
+const StudentDashboardPage = lazy(() => import('@/features/student/views/StudentDashboardPage'));
 const StudentSessionPage   = lazy(() => import('@/features/student/views/StudentSessionPage'));
 const ReplaySessionPage    = lazy(() => import('@/pages/ReplaySessionPage'));
 
@@ -55,6 +56,16 @@ export const router = createBrowserRouter([
 
   // Root redirect
   { path: '/', element: <Navigate to="/dashboard" replace /> },
+
+  // Student-only protected routes
+  {
+    path: '/student-dashboard',
+    element: (
+      <RequireAuth allowedRoles={['STUDENT']}>
+        {withShell(<StudentDashboardPage />)}
+      </RequireAuth>
+    ),
+  },
 
   // Instructor-only protected routes
   {

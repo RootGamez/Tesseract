@@ -103,7 +103,7 @@ export default function JoinSessionPage() {
             <Button
               variant="ghost"
               className="w-full text-muted-foreground"
-              onClick={() => navigate('/login')}
+              onClick={() => navigate('/student-dashboard')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Volver al inicio
