@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, Trophy, X, Clock } from 'lucide-react';
+import { LogOut, MessageCircle, Trophy, X, Clock } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
@@ -9,7 +9,7 @@ import { useSceneStore } from '../store/sceneStore';
 import { useChatStore } from '@/features/chat/store/chatStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { useWebSocket } from '@/shared/hooks/useWebSocket';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from '@/shared/lib/utils';
 import BoardWrapper from '@/features/board/components/BoardWrapper';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
@@ -21,6 +21,7 @@ const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'
 
 export default function StudentSessionPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { activeScene, points, pointAnimation, clearPointAnimation } = useSceneStore();
   const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, isSilenced } = useChatStore();
   const { user } = useAuthStore();
@@ -47,6 +48,11 @@ export default function StudentSessionPage() {
     if (!chatInput.trim()) return;
     sendMessage('chat', 'CHAT_MESSAGE', { text: chatInput.trim(), is_floating: true });
     setChatInput('');
+  };
+
+  const handleExitSession = () => {
+    setDrawerOpen(false);
+    navigate('/student-dashboard', { replace: true });
   };
 
   return (
@@ -146,6 +152,15 @@ export default function StudentSessionPage() {
           <span className="text-white/70 text-xs font-medium hidden sm:block truncate max-w-[80px]">
             {user?.display_name ?? 'Tú'}
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs border-white/15 bg-white/5 text-zinc-200 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/40"
+            onClick={handleExitSession}
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Salir
+          </Button>
         </div>
 
         {/* Center: Emojis */}
