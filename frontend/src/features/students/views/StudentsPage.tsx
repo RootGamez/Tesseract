@@ -46,8 +46,8 @@ export default function StudentsPage() {
         </div>
 
         <Card className="border-border shadow-card">
-          {/* Header row */}
-          <div className="grid grid-cols-[1fr_180px_100px_100px_100px_40px] gap-4 px-5 py-3 bg-muted/50 rounded-t-lg border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          {/* Header row - desktop only */}
+          <div className="hidden md:grid grid-cols-[1fr_180px_100px_100px_100px_40px] gap-4 px-5 py-3 bg-muted/50 rounded-t-lg border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             <span>Estudiante</span>
             <span>Email</span>
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Sesiones</span>
@@ -69,26 +69,59 @@ export default function StudentsPage() {
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.04 }}
-                  className="grid grid-cols-[1fr_180px_100px_100px_100px_40px] gap-4 px-5 py-4 items-center hover:bg-muted/40 transition-colors"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="relative shrink-0">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="text-xs bg-primary text-primary-foreground font-bold">
-                          {s.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${s.online ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                  {/* Desktop View */}
+                  <div className="hidden md:grid grid-cols-[1fr_180px_100px_100px_100px_40px] gap-4 px-5 py-4 items-center hover:bg-muted/40 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative shrink-0">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs bg-primary text-primary-foreground font-bold">
+                            {s.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${s.online ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                      </div>
+                      <p className="font-medium text-sm truncate">{s.name}</p>
                     </div>
-                    <p className="font-medium text-sm truncate">{s.name}</p>
+                    <p className="text-sm text-muted-foreground truncate">{s.email}</p>
+                    <p className="text-sm font-mono">{s.sessions}</p>
+                    <p className="text-sm font-bold font-mono text-accent">{s.points}</p>
+                    <p className="text-xs text-muted-foreground">{s.lastActive}</p>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground justify-self-end">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
                   </div>
-                  <p className="text-sm text-muted-foreground truncate">{s.email}</p>
-                  <p className="text-sm font-mono">{s.sessions}</p>
-                  <p className="text-sm font-bold font-mono text-accent">{s.points}</p>
-                  <p className="text-xs text-muted-foreground">{s.lastActive}</p>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
+
+                  {/* Mobile View */}
+                  <div className="flex md:hidden flex-col gap-3 p-4 hover:bg-muted/20 transition-colors border-b last:border-b-0 border-border">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="text-xs bg-primary text-primary-foreground font-bold">
+                              {s.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${s.online ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm text-foreground truncate">{s.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{s.email}</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg">
+                      <div className="flex items-center gap-3 font-mono">
+                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{s.sessions} ses.</span>
+                        <span className="flex items-center gap-1 font-bold text-accent"><Trophy className="w-3 h-3" />{s.points} pts</span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">Última act: {s.lastActive}</span>
+                    </div>
+                  </div>
                 </motion.div>
               ))}
             </div>

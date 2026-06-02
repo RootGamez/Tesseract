@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
   Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2,
-  Copy, Link, UserPlus
+  Copy, Link, UserPlus, List, SlidersHorizontal
 } from 'lucide-react';
 
 // UI Shared Components
@@ -23,6 +23,7 @@ import {
   DialogHeader, 
   DialogTitle 
 } from '@/shared/components/ui/dialog';
+import { Sheet, SheetContent } from '@/shared/components/ui/sheet';
 
 // Core State & Services
 import { useOrchestratorStore } from '../store/orchestratorStore';
@@ -82,6 +83,8 @@ export default function InstructorSessionPage() {
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  const [isStagesDrawerOpen, setIsStagesDrawerOpen] = useState(false);
+  const [isControlsDrawerOpen, setIsControlsDrawerOpen] = useState(false);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
   const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
   const [quizLaunched, setQuizLaunched] = useState(false);
@@ -384,44 +387,46 @@ export default function InstructorSessionPage() {
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
       {/* ── TOPBAR ────────────────────────────────────── */}
-      <header className="h-14 border-b border-border bg-card/80 backdrop-blur flex items-center justify-between px-4 shrink-0 z-30">
-        <div className="flex items-center gap-3">
+      <header className="h-14 border-b border-border bg-card/80 backdrop-blur flex items-center justify-between px-3 sm:px-4 shrink-0 z-30">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button onClick={() => navigate('/sessions')} className="text-muted-foreground hover:text-foreground transition-colors">
             <ChevronLeft className="w-5 h-5" />
           </button>
           <Separator orientation="vertical" className="h-5" />
-          <div className="w-6 h-6 rounded-md sidebar-gradient flex items-center justify-center">
+          <div className="w-6 h-6 rounded-md sidebar-gradient flex items-center justify-center shrink-0">
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="font-semibold text-sm truncate max-w-[200px]">{sessionInfo.title}</span>
-          <div className="flex items-center gap-1 ml-2">
-            <span className="text-xs font-mono bg-muted/20 px-2 py-0.5 rounded">Código: {sessionInfo.join_code || '---'}</span>
+          <span className="font-semibold text-sm truncate max-w-[120px] sm:max-w-[200px]">{sessionInfo.title}</span>
+          <div className="flex items-center gap-1 ml-1 sm:ml-2">
+            <span className="text-[11px] sm:text-xs font-mono bg-muted/20 px-1.5 sm:px-2 py-0.5 rounded truncate max-w-[100px] sm:max-w-none">
+              <span className="hidden sm:inline">Código: </span>#{sessionInfo.join_code || '---'}
+            </span>
             <button onClick={() => {
               navigator.clipboard.writeText(sessionInfo.join_code ?? '');
               toast({ title: 'Código copiado', description: 'El código de la clase se ha copiado al portapapeles.' });
-            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30">
+            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30 shrink-0">
               <Copy className="w-3 h-3 text-primary" />
             </button>
             <button onClick={() => {
               const link = `${window.location.origin}/session/${id}`;
               navigator.clipboard.writeText(link);
               toast({ title: 'Enlace copiado', description: 'El enlace de la clase se ha copiado al portapapeles.' });
-            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30">
+            }} className="inline-flex items-center justify-center w-5 h-5 rounded bg-primary/20 hover:bg-primary/30 shrink-0">
               <Link className="w-3 h-3 text-primary" />
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <Badge variant="outline" className={cn(
-            'text-xs gap-1.5',
+            'text-[11px] sm:text-xs gap-1 sm:gap-1.5 px-1.5 sm:px-2.5',
             isConnected ? 'border-green-500/40 text-green-500' : 'border-destructive/40 text-destructive'
           )}>
-            {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-            {isReconnecting ? 'Reconectando...' : isConnected ? 'Conectado' : 'Sin conexión'}
+            {isConnected ? <Wifi className="w-3.5 h-3.5 sm:w-3 sm:h-3" /> : <WifiOff className="w-3.5 h-3.5 sm:w-3 sm:h-3" />}
+            <span className="hidden sm:inline">{isReconnecting ? 'Reconectando...' : isConnected ? 'Conectado' : 'Sin conexión'}</span>
           </Badge>
 
-          <Badge className="bg-red-500 text-white border-0 gap-1.5 text-xs">
+          <Badge className="hidden sm:flex bg-red-500 text-white border-0 gap-1.5 text-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
             EN VIVO
           </Badge>
@@ -429,7 +434,7 @@ export default function InstructorSessionPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-2 text-xs"
+            className="h-8 px-2 sm:px-3 gap-1 sm:gap-2 text-xs"
             onClick={async () => {
               if (!id) return;
               try {
@@ -446,13 +451,13 @@ export default function InstructorSessionPage() {
             }}
           >
             {sessionState === 'LIVE' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            {sessionState === 'LIVE' ? 'Pausar' : 'Reanudar'}
+            <span className="hidden sm:inline">{sessionState === 'LIVE' ? 'Pausar' : 'Reanudar'}</span>
           </Button>
 
           <Button
             variant="destructive"
             size="sm"
-            className="h-8 gap-2 text-xs"
+            className="h-8 px-2 sm:px-3 gap-1 sm:gap-2 text-xs"
             onClick={async () => {
               if (!id) return;
               try {
@@ -463,16 +468,16 @@ export default function InstructorSessionPage() {
               }
             }}
           >
-            <Square className="w-3 h-3" />
-            Finalizar
+            <Square className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+            <span className="hidden sm:inline">Finalizar</span>
           </Button>
         </div>
       </header>
 
       {/* ── MAIN BODY ─────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* LEFT SIDEBAR — Stage list */}
-        <aside className="w-[220px] border-r border-border bg-card flex flex-col shrink-0">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* LEFT SIDEBAR — Stage list (desktop) */}
+        <aside className="hidden lg:flex w-[220px] border-r border-border bg-card flex flex-col shrink-0">
           <div className="p-3 border-b border-border flex gap-2">
             <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={goPrev} disabled={activeIdx <= 0}>
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -563,6 +568,106 @@ export default function InstructorSessionPage() {
           </div>
         </aside>
 
+        {/* LEFT SIDEBAR — Mobile Drawer */}
+        <Sheet open={isStagesDrawerOpen} onOpenChange={setIsStagesDrawerOpen}>
+          <SheetContent side="left" className="p-0 w-[240px] border-r border-border bg-card flex flex-col h-full text-foreground">
+            <div className="p-4 border-b border-border shrink-0 flex items-center justify-between">
+              <span className="font-semibold text-sm">Escenas de la Clase</span>
+            </div>
+            <div className="p-3 border-b border-border flex gap-2 shrink-0">
+              <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={goPrev} disabled={activeIdx <= 0}>
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </Button>
+              <Button size="sm" className="flex-1 h-8 text-xs sidebar-gradient border-0 text-white" onClick={goNext} disabled={activeIdx >= stages.length - 1 || activeIdx === -1}>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+
+            <ScrollArea className="flex-1">
+              <div className="p-2 space-y-1">
+                {stages.map((stage, idx) => {
+                  const Icon = STAGE_ICONS[stage.type] ?? Zap;
+                  const isActive = stage.id === activeStageId;
+                  return (
+                    <div
+                      key={stage.id}
+                      className={cn(
+                        'group relative p-2.5 rounded-lg cursor-pointer border transition-all flex items-center justify-between',
+                        isActive ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted'
+                      )}
+                      onClick={async () => {
+                        if (id && !isActive) {
+                          try {
+                            setIsStagesDrawerOpen(false);
+                            useOrchestratorStore.getState().syncState({ activeStageId: stage.id });
+                            if (boardRef.current) await boardRef.current.flushSnapshot();
+                            await sessionsService.changeStage(id, stage.id);
+                          } catch (err) {
+                            console.error('Error switching stage:', err);
+                          }
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className={cn(
+                          'w-7 h-7 rounded-md flex items-center justify-center shrink-0',
+                          isActive ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'
+                        )}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={cn(
+                            'text-xs font-semibold truncate',
+                            isActive ? 'text-primary' : 'text-foreground'
+                          )}>
+                            {idx + 1}. {stage.title}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground font-mono">{stage.type} · {stage.duration} min</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (confirm(`¿Eliminar la escena "${stage.title}"?`)) {
+                            try {
+                              await sessionsService.deleteStage(templateId, stage.id);
+                              const remaining = stages.filter(s => s.id !== stage.id);
+                              if (isActive && remaining.length > 0) {
+                                await sessionsService.changeStage(id!, remaining[0].id);
+                              }
+                              await fetchSession();
+                            } catch (err) {
+                              console.error('Failed to delete stage:', err);
+                            }
+                          }
+                        }}
+                        className="hover:text-destructive p-1 rounded shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+
+            <div className="p-3 border-t border-border shrink-0">
+              <Button
+                onClick={() => {
+                  setIsStagesDrawerOpen(false);
+                  setIsAddOpen(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="w-full h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/30"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Agregar Escena
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+
         {/* CENTER — Canvas Orquestador */}
         <main className="flex-1 relative bg-zinc-950 flex items-center justify-center overflow-hidden">
           <AnimatePresence mode="wait">
@@ -631,8 +736,8 @@ export default function InstructorSessionPage() {
           )}
         </main>
 
-        {/* RIGHT SIDEBAR — Controls */}
-        <aside className="w-[280px] border-l border-border bg-card flex flex-col shrink-0">
+        {/* RIGHT SIDEBAR — Controls (desktop) */}
+        <aside className="hidden xl:flex w-[280px] border-l border-border bg-card flex flex-col shrink-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <div className="p-2 border-b border-border shrink-0">
               <TabsList className="w-full h-8">
@@ -648,8 +753,6 @@ export default function InstructorSessionPage() {
 
             {/* CLASE TAB */}
             <TabsContent value="clase" className="flex-1 overflow-y-auto m-0 p-3 space-y-4 scrollbar-thin">
-
-
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gamificación</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -752,26 +855,146 @@ export default function InstructorSessionPage() {
             </TabsContent>
           </Tabs>
         </aside>
+
+        {/* RIGHT SIDEBAR — Mobile Controls Drawer */}
+        <Sheet open={isControlsDrawerOpen} onOpenChange={setIsControlsDrawerOpen}>
+          <SheetContent side="right" className="p-0 w-[300px] border-l border-border bg-card flex flex-col h-full text-foreground">
+            <div className="p-4 border-b border-border shrink-0 flex items-center justify-between">
+              <span className="font-semibold text-sm">Controles de la Sesión</span>
+            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+              <div className="p-2 border-b border-border shrink-0">
+                <TabsList className="w-full h-8">
+                  <TabsTrigger value="clase" className="flex-1 text-xs">Clase</TabsTrigger>
+                  <TabsTrigger value="estudiantes" className="flex-1 text-xs">
+                    Estudiantes
+                    <Badge className="ml-1.5 h-4 px-1 text-[10px] bg-primary text-primary-foreground border-0">
+                      {participants.filter(p => p.online && !p.isInstructor).length}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              {/* CLASE TAB */}
+              <TabsContent value="clase" className="flex-1 overflow-y-auto m-0 p-3 space-y-4 scrollbar-thin">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gamificación</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" className="h-16 flex-col gap-1 text-xs" onClick={() => { setIsControlsDrawerOpen(false); handleSpinner(); }}>
+                      <Dices className="w-5 h-5 text-primary" />
+                      Ruleta
+                    </Button>
+                    <Button variant="outline" className="h-16 flex-col gap-1 text-xs" onClick={() => { setIsControlsDrawerOpen(false); handleTimer(); }}>
+                      <Timer className="w-5 h-5 text-accent" />
+                      Timer
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Asignar Puntos</p>
+                  <div className="space-y-2">
+                    <select
+                      value={selectedParticipant}
+                      onChange={e => setSelectedParticipant(e.target.value)}
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="">Seleccionar estudiante...</option>
+                      {participants.filter(p => p.online && !p.isInstructor).map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        min={1} max={100}
+                        value={points}
+                        onChange={e => setPoints(e.target.value)}
+                        className="h-9 text-center font-bold"
+                      />
+                      <Button
+                        size="sm"
+                        className="h-9 card-gradient-orange border-0 text-white px-4 shrink-0 hover:opacity-90"
+                        onClick={() => { handleAwardPoints(); setIsControlsDrawerOpen(false); }}
+                        disabled={!selectedParticipant}
+                      >
+                        +Pts
+                      </Button>
+                    </div>
+                    <div className="flex gap-1">
+                      {[5, 10, 25, 50].map(v => (
+                        <Button key={v} variant="outline" size="sm" className="flex-1 h-7 text-xs" onClick={() => setPoints(String(v))}>
+                          +{v}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* ESTUDIANTES TAB */}
+              <TabsContent value="estudiantes" className="flex-1 m-0 overflow-y-auto scrollbar-thin">
+                <div className="divide-y divide-border">
+                  {participants
+                    .filter(p => !p.isInstructor)
+                    .slice()
+                    .sort((a, b) => b.points - a.points)
+                    .map((p, idx) => (
+                      <div key={p.id} className="flex items-center gap-3 px-4 py-3">
+                        <span className="text-xs text-muted-foreground w-4 text-right font-mono">{idx + 1}</span>
+                        <div className="relative shrink-0">
+                          <Avatar className="h-7 w-7">
+                            <AvatarFallback className="text-[10px] bg-primary text-primary-foreground font-bold">
+                              {p.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className={cn('absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card', p.online ? 'bg-green-500' : 'bg-muted-foreground')} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{p.name}</p>
+                        </div>
+                        <span className="text-xs font-bold font-mono text-accent">{p.points}</span>
+                      </div>
+                    ))}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </SheetContent>
+        </Sheet>
       </div>
 
       {/* ── FOOTER TOOLBAR ─────────────────────────────── */}
-      <footer className="h-13 border-t border-border bg-card/80 backdrop-blur flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground font-medium">Herramientas:</span>
+      <footer className="h-13 border-t border-border bg-card/80 backdrop-blur flex items-center justify-between px-3 sm:px-4 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Mobile stage toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2 text-xs gap-1 lg:hidden"
+            onClick={() => setIsStagesDrawerOpen(true)}
+          >
+            <List className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Escenas</span>
+          </Button>
+
+          <span className="text-xs text-muted-foreground font-medium hidden md:inline">Herramientas:</span>
           {activeStage?.type === 'BOARD' && (
-            <Button variant="secondary" size="sm" className="h-8 text-xs gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-red-500" />
-              Puntero Láser
+            <Button variant="secondary" size="sm" className="h-8 text-xs gap-1 sm:gap-1.5">
+              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500" />
+              <span className="hidden sm:inline">Puntero Láser</span>
+              <span className="sm:hidden">Laser</span>
             </Button>
           )}
           {activeStage?.type === 'PDF' && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline" size="sm" className="h-8 text-xs w-8 p-0"
                 onClick={() => handlePdfPageChange(currentPdfPage - 1)}
                 disabled={currentPdfPage <= 1}
               >‹</Button>
-              <span className="text-xs font-mono text-muted-foreground">Pág. {currentPdfPage}</span>
+              <span className="text-[11px] sm:text-xs font-mono text-muted-foreground px-1">Pág. {currentPdfPage}</span>
               <Button
                 variant="outline" size="sm" className="h-8 text-xs w-8 p-0"
                 onClick={() => handlePdfPageChange(currentPdfPage + 1)}
@@ -779,8 +1002,19 @@ export default function InstructorSessionPage() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-2" onClick={() => setIsJoinOpen(true)}>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Mobile controls toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2 text-xs gap-1 xl:hidden"
+            onClick={() => setIsControlsDrawerOpen(true)}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Controles</span>
+          </Button>
+
+          <Button variant="outline" size="sm" className="h-8 px-2 sm:px-3 text-xs gap-1 sm:gap-2 hidden sm:flex" onClick={() => setIsJoinOpen(true)}>
             <UserPlus className="w-3.5 h-3.5" />
             Unirse
           </Button>
@@ -819,24 +1053,24 @@ export default function InstructorSessionPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs gap-1.5 relative"
+            className="h-8 px-2 sm:px-3 text-xs gap-1.5 relative"
             onClick={() => setIsChatOpen(!isChatOpen)}
           >
             <MessageCircle className="w-3.5 h-3.5" />
-            Chat
+            <span className="hidden sm:inline">Chat</span>
             {chatMessages.length > 0 && (
               <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-accent text-[9px] font-bold text-white flex items-center justify-center border border-background">
                 {chatMessages.length > 9 ? '9+' : chatMessages.length}
               </span>
             )}
           </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+          <Button variant="outline" size="sm" className="h-8 px-2 sm:px-3 text-xs gap-1.5 hidden sm:flex">
             <FolderOpen className="w-3.5 h-3.5" />
             Recursos
           </Button>
-          <Button size="sm" className="h-8 text-xs sidebar-gradient border-0 text-white gap-1.5">
+          <Button size="sm" className="h-8 px-2 sm:px-3 text-xs sidebar-gradient border-0 text-white gap-1.5">
             <Users className="w-3.5 h-3.5" />
-            {participants.filter(p => p.online && !p.isInstructor).length} online
+            {participants.filter(p => p.online && !p.isInstructor).length}<span className="hidden sm:inline"> online</span>
           </Button>
         </div>
       </footer>

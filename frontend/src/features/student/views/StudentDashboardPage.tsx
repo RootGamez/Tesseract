@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
-  BookOpen, Users, TrendingUp, Clock, Plus,
-  PlayCircle, ChevronRight, Calendar, ArrowRight
+  BookOpen, Users, TrendingUp, Clock,
+  PlayCircle, ChevronRight, Calendar
 } from 'lucide-react';
 import { Topbar } from '@/shared/components/layout/Topbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';

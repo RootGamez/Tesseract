@@ -1,10 +1,11 @@
-import { Sun, Moon, Bell, Search, Plus } from 'lucide-react';
+import { Menu, Sun, Moon, Bell, Search, Plus } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
 import { useTheme } from './ThemeProvider';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { useNavigate } from 'react-router-dom';
+import { useSidebarStore } from '@/shared/hooks/useSidebarStore';
 
 interface TopbarProps {
   title: string;
@@ -16,13 +17,25 @@ export function Topbar({ title, subtitle, showNewSession }: TopbarProps) {
   const { theme, setTheme } = useTheme();
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const { setMobileOpen } = useSidebarStore();
   const initials = user?.display_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U';
 
   return (
     <header className="h-16 border-b border-border bg-card/80 backdrop-blur-sm flex items-center justify-between px-6 shrink-0 sticky top-0 z-30">
-      <div>
-        <h1 className="text-xl font-bold text-foreground leading-none">{title}</h1>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+      <div className="flex items-center gap-3">
+        {/* Mobile menu toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 text-muted-foreground hover:text-foreground md:hidden shrink-0"
+          onClick={() => setMobileOpen(true)}
+        >
+          <Menu className="w-5 h-5" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-bold text-foreground leading-none">{title}</h1>
+          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">

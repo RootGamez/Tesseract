@@ -23,6 +23,7 @@ const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'
 
 export default function StudentSessionPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { activeScene, points, pointAnimation, clearPointAnimation, rouletteState, timerData } = useSceneStore();
   const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, isSilenced } = useChatStore();
   const { user } = useAuthStore();
@@ -165,14 +166,17 @@ export default function StudentSessionPage() {
         </div>
 
         {/* Center: Emojis */}
-        <div className="flex items-center gap-1">
-          {EMOJIS.map(emoji => (
+        <div className="flex items-center gap-0.5 sm:gap-1">
+          {EMOJIS.map((emoji, index) => (
             <motion.button
               key={emoji}
               whileTap={{ scale: 0.8 }}
               whileHover={{ scale: 1.2 }}
               onClick={() => handleEmoji(emoji)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-base hover:bg-white/10 transition-colors"
+              className={cn(
+                "w-8 h-8 rounded-lg flex items-center justify-center text-base hover:bg-white/10 transition-colors",
+                index >= 4 && "hidden sm:flex"
+              )}
             >
               {emoji}
             </motion.button>

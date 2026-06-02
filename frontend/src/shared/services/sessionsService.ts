@@ -5,11 +5,12 @@ export interface LiveSession {
   title: string;
   state: 'SCHEDULED' | 'LIVE' | 'PAUSED' | 'ENDED';
   join_code: string;
-  instructor: string;
+  instructor: string | { id: string; display_name: string };
   participant_count: number;
   created_at: string;
   started_at?: string;
   ended_at?: string;
+  scheduled_at?: string;
   duration_seconds?: number;
   ai_summary?: string;
   template_id?: string;

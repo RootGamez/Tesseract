@@ -64,8 +64,8 @@ export default function SessionsListPage() {
         </div>
 
         <Card className="border-border shadow-card">
-          {/* Header row */}
-          <div className="grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-3 bg-muted/50 rounded-t-lg border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          {/* Header row - desktop only */}
+          <div className="hidden md:grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-3 bg-muted/50 rounded-t-lg border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             <span>Sesión</span>
             <span>Código</span>
             <span>Estudiantes</span>
@@ -89,7 +89,6 @@ export default function SessionsListPage() {
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}
-                    className="grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-4 items-center hover:bg-muted/40 cursor-pointer transition-colors"
                     onClick={async () => {
                       if (s.state === 'ENDED') {
                         navigate(`/session/${s.id}/replay`);
@@ -105,27 +104,58 @@ export default function SessionsListPage() {
                       }
                     }}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-lg card-gradient-blue flex items-center justify-center shrink-0">
-                        <PlayCircle className="w-4 h-4 text-white" />
+                    {/* Desktop View */}
+                    <div className="hidden md:grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-4 items-center hover:bg-muted/40 cursor-pointer transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg card-gradient-blue flex items-center justify-center shrink-0">
+                          <PlayCircle className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{s.title}</p>
+                          <p className="text-xs text-muted-foreground">{formatDate(s.created_at)}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate">{s.title}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(s.created_at)}</p>
+                      <span className="font-mono text-sm text-muted-foreground">#{s.join_code}</span>
+                      <span className="text-sm flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5 text-muted-foreground" />{s.participant_count}
+                      </span>
+                      <span className="text-sm flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground" />{formatDuration(s.duration_seconds)}
+                      </span>
+                      <Badge variant="outline" className={`text-xs w-fit ${cfg.className}`}>
+                        {cfg.dot && <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot} mr-1.5 animate-pulse`} />}
+                        {cfg.label}
+                      </Badge>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground justify-self-end" />
+                    </div>
+
+                    {/* Mobile View */}
+                    <div className="flex md:hidden flex-col gap-3 p-4 hover:bg-muted/20 cursor-pointer transition-colors border-b last:border-b-0 border-border">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg card-gradient-blue flex items-center justify-center shrink-0">
+                            <PlayCircle className="w-3.5 h-3.5 text-white" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm text-foreground truncate">{s.title}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">{formatDate(s.created_at)}</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] px-2 py-0.5 shrink-0 ${cfg.className}`}>
+                          {cfg.dot && <span className={`inline-block w-1 h-1 rounded-full ${cfg.dot} mr-1 animate-pulse`} />}
+                          {cfg.label}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono bg-muted/60 px-1.5 py-0.5 rounded text-[10px]">#{s.join_code}</span>
+                          <span className="flex items-center gap-1"><Users className="w-3 h-3" />{s.participant_count} est.</span>
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatDuration(s.duration_seconds)}</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                       </div>
                     </div>
-                    <span className="font-mono text-sm text-muted-foreground">#{s.join_code}</span>
-                    <span className="text-sm flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5 text-muted-foreground" />{s.participant_count}
-                    </span>
-                    <span className="text-sm flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />{formatDuration(s.duration_seconds)}
-                    </span>
-                    <Badge variant="outline" className={`text-xs w-fit ${cfg.className}`}>
-                      {cfg.dot && <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot} mr-1.5 animate-pulse`} />}
-                      {cfg.label}
-                    </Badge>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </motion.div>
                 );
               })}

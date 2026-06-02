@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { authService } from '@/shared/services/authService';
 import { cn } from '@/shared/lib/utils';
-import { useState } from 'react';
+import { useSidebarStore } from '@/shared/hooks/useSidebarStore';
 import { Button } from '../ui/button';
 
 const INSTRUCTOR_NAV = [
@@ -24,13 +24,19 @@ const STUDENT_NAV = [
   { to: '/student-dashboard', icon: LayoutDashboard, label: 'Mi Dashboard' },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  forceExpanded?: boolean;
+}
+
+export function Sidebar({ forceExpanded = false }: SidebarProps) {
   const { user, clearUser } = useAuthStore();
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(false);
+  const { isCollapsed, toggleCollapsed, setMobileOpen } = useSidebarStore();
+  const collapsed = forceExpanded ? false : isCollapsed;
   const nav = user?.role === 'STUDENT' ? STUDENT_NAV : INSTRUCTOR_NAV;
 
   const handleLogout = async () => {
+    setMobileOpen(false);
     await authService.logout();
     clearUser();
     navigate('/login');
@@ -47,11 +53,13 @@ export function Sidebar() {
       className="sidebar-gradient shadow-sidebar flex flex-col h-full shrink-0 overflow-hidden relative"
     >
       {/* Collapse toggle */}
-      <Button variant="ghost" size="icon" className="absolute -right-3 top-4 z-10" onClick={() => setCollapsed(!collapsed)}>
-        {collapsed
-          ? <ChevronRight className="w-3 h-3 text-white" />
-          : <ChevronLeft className="w-3 h-3 text-white" />}
-      </Button>
+      {!forceExpanded && (
+        <Button variant="ghost" size="icon" className="absolute -right-3 top-4 z-10 hidden md:flex" onClick={toggleCollapsed}>
+          {collapsed
+            ? <ChevronRight className="w-3 h-3 text-white" />
+            : <ChevronLeft className="w-3 h-3 text-white" />}
+        </Button>
+      )}
 
       {/* Logo */}
       <div className="p-5 flex items-center gap-3 shrink-0">
@@ -100,7 +108,12 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
         {nav.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/dashboard' || to === '/student-dashboard' || to === '/join'}>
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/dashboard' || to === '/student-dashboard' || to === '/join'}
+            onClick={() => setMobileOpen(false)}
+          >
             {({ isActive }) => (
               <div className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer group',
@@ -133,7 +146,7 @@ export function Sidebar() {
 
       {/* Bottom actions */}
       <div className="p-3 border-t border-white/10 space-y-1">
-        <NavLink to="/settings">
+        <NavLink to="/settings" onClick={() => setMobileOpen(false)}>
           {({ isActive }) => (
             <div className={cn(
               'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer',
