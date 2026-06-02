@@ -92,7 +92,7 @@ export default function RegisterPage() {
 
       // Redirect based on role
       setTimeout(() => {
-        navigate(user.role === 'STUDENT' ? '/join' : '/dashboard', { replace: true });
+        navigate(user.role === 'STUDENT' ? '/student-dashboard' : '/dashboard', { replace: true });
       }, 1000);
       
     } catch (err: any) {

@@ -46,7 +46,7 @@ export default function LoginPage() {
     try {
       const { user } = await authService.login(values);
       setUser(user);
-      navigate(user.role === 'STUDENT' ? '/join' : from, { replace: true });
+      navigate(user.role === 'STUDENT' ? '/student-dashboard' : from, { replace: true });
     } catch {
       toast({
         title: 'Error de autenticación',

@@ -21,8 +21,7 @@ const INSTRUCTOR_NAV = [
 ];
 
 const STUDENT_NAV = [
-  { to: '/join', icon: PlayCircle, label: 'Unirse a Clase' },
-  { to: '/my-sessions', icon: BookOpen, label: 'Mis Clases' },
+  { to: '/student-dashboard', icon: LayoutDashboard, label: 'Mi Dashboard' },
 ];
 
 export function Sidebar() {
@@ -101,7 +100,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
         {nav.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/dashboard' || to === '/join'}>
+          <NavLink key={to} to={to} end={to === '/dashboard' || to === '/student-dashboard' || to === '/join'}>
             {({ isActive }) => (
               <div className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer group',
