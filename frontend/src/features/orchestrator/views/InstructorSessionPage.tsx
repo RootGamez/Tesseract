@@ -99,6 +99,14 @@ export default function InstructorSessionPage() {
     }
   }, [isAddOpen]);
 
+  const prevRouletteOpen = useRef(false);
+  useEffect(() => {
+    if (prevRouletteOpen.current && !isRouletteOpen) {
+      sendMessage('gamification', 'ROULETTE_CLOSE', {});
+    }
+    prevRouletteOpen.current = isRouletteOpen;
+  }, [isRouletteOpen, sendMessage]);
+
   const { messages: chatMessages } = useChatStore();
   const { user } = useAuthStore();
 
@@ -664,10 +672,10 @@ export default function InstructorSessionPage() {
                 }}
                 participants={participants.filter(p => !p.isInstructor).map(p => ({ id: p.id, name: p.name }))}
                 onActiveParticipantsChange={(active) => {
-                  sendMessage('gamification', 'ROULETTE_OPEN', { activeParticipants: active });
+                  sendMessage('gamification', 'ROULETTE_OPEN', { participants: active });
                 }}
-                onSpinStart={(winnerIndex, winnerId, winnerName) => {
-                  sendMessage('gamification', 'ROULETTE_SPIN', { winnerIndex, winnerId, winnerName });
+                onSpin={(payload) => {
+                  sendMessage('gamification', 'ROULETTE_SPIN', payload);
                 }}
                 onResult={(winnerId) => {
                   sendMessage('gamification', 'ROULETTE_RESULT', { participant_id: winnerId });

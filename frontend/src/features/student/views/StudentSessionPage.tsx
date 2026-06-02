@@ -274,8 +274,8 @@ export default function StudentSessionPage() {
           isStudent={true}
           open={rouletteState.isOpen}
           participants={rouletteState.participants}
-          mustStartSpinning={rouletteState.mustSpin}
-          prizeNumber={rouletteState.prizeNumber}
+          spinId={rouletteState.spinId}
+          winnerId={rouletteState.winnerId}
           winnerName={rouletteState.winnerName}
         />
       )}

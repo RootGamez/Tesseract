@@ -20,8 +20,9 @@ export interface SceneState {
   rouletteState: {
     isOpen: boolean;
     participants: { id: string; name: string }[];
-    mustSpin: boolean;
-    prizeNumber: number;
+    // Token único por giro: el alumno gira cuando cambia (idempotente).
+    // null = ruleta abierta pero aún sin girar.
+    spinId: number | null;
     winnerId: string | null;
     winnerName: string | null;
   } | null;

@@ -265,28 +265,29 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
       case 'SPINNER_RESULT':
         a.triggerSpinner(payload);
         break;
-      case 'ROULETTE_OPEN':
+      case 'ROULETTE_OPEN': {
+        // Actualiza participantes/visibilidad sin tocar el giro en curso (spinId).
+        const cur = useSceneStore.getState().rouletteState;
         a.setSceneState({
           rouletteState: {
             isOpen: true,
-            participants: payload.activeParticipants || [],
-            mustSpin: false,
-            prizeNumber: 0,
-            winnerId: null,
-            winnerName: null,
+            participants: payload.participants || payload.activeParticipants || [],
+            spinId: cur?.spinId ?? null,
+            winnerId: cur?.winnerId ?? null,
+            winnerName: cur?.winnerName ?? null,
           },
         });
         break;
+      }
       case 'ROULETTE_SPIN': {
-        const currentRoulette = useSceneStore.getState().rouletteState;
+        const cur = useSceneStore.getState().rouletteState;
         a.setSceneState({
           rouletteState: {
             isOpen: true,
-            participants: currentRoulette?.participants || [],
-            mustSpin: true,
-            prizeNumber: payload.winnerIndex,
-            winnerId: payload.winnerId,
-            winnerName: payload.winnerName || null,
+            participants: cur?.participants || [],
+            spinId: payload.spinId ?? Date.now(),
+            winnerId: payload.winnerId ?? null,
+            winnerName: payload.winnerName ?? null,
           },
         });
         break;
