@@ -45,6 +45,7 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         self.session_id = self.scope["url_route"]["kwargs"]["session_id"]
         self.game_group = f"gamification_{self.session_id}"
         self.user = user
+        self.participant = await self._get_participant()
 
         await self.channel_layer.group_add(self.game_group, self.channel_name)
         await self.accept()
@@ -234,8 +235,8 @@ class GamificationConsumer(AsyncWebsocketConsumer):
     async def _handle_quiz_response(self, payload):
         """RF-GAME-05: Record student answer."""
         question_id = payload.get("question_id")
-        answer = payload.get("answer", "")
-        await self._save_quiz_response(question_id, answer)
+        answer_index = payload.get("answer_index", payload.get("answer", ""))
+        await self._save_quiz_response(question_id, answer_index)
         # Broadcast aggregated results to instructor group
         results = await self._get_quiz_results(question_id)
         await self.channel_layer.group_send(
@@ -274,6 +275,22 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     # ── DB helpers ─────────────────────────────────────────────────────────────
+
+    @database_sync_to_async
+    def _get_participant(self):
+        from apps.live_sessions.models import Participant
+        try:
+            return Participant.objects.get(session_id=self.session_id, user=self.user)
+        except Participant.DoesNotExist:
+            # Guest or instructor — try by display_name
+            display_name = getattr(self.user, "display_name", None) or getattr(self.user, "username", None)
+            if display_name:
+                return Participant.objects.filter(
+                    session_id=self.session_id, display_name=display_name
+                ).first()
+            return None
+        except Exception:
+            return None
 
     @database_sync_to_async
     def _is_instructor(self) -> bool:
@@ -350,40 +367,49 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         question.save(update_fields=["is_launched", "launched_at"])
 
     @database_sync_to_async
-    def _save_quiz_response(self, question_id: str, answer: str):
+    def _save_quiz_response(self, question_id: str, answer):
         from apps.gamification.models import QuizQuestion, QuizResponse
-        from apps.live_sessions.models import Participant
+        participant = self.participant
+        if not participant:
+            logger.warning("quiz_response_no_participant", session_id=self.session_id)
+            return
         try:
             question = QuizQuestion.objects.get(pk=question_id)
-            participant = Participant.objects.get(session_id=self.session_id, user=self.user)
-            # Determine correctness for multiple choice
-            is_correct = None
-            if question.question_type == "MULTIPLE_CHOICE":
-                is_correct = answer == question.correct_answer
             QuizResponse.objects.update_or_create(
                 question=question,
                 participant=participant,
-                defaults={"answer": answer, "is_correct": is_correct},
+                defaults={"answer": str(answer)},
             )
-        except Exception:
-            pass
+            logger.info("quiz_response_saved", question_id=question_id, participant_id=str(participant.pk), answer=answer)
+        except QuizQuestion.DoesNotExist:
+            logger.warning("quiz_response_question_not_found", question_id=question_id)
+        except Exception as e:
+            logger.error("quiz_response_save_failed", error=str(e))
 
     @database_sync_to_async
     def _get_quiz_results(self, question_id: str) -> dict:
         from apps.gamification.models import QuizQuestion, QuizResponse
-        from django.db.models import Count
         try:
             question = QuizQuestion.objects.get(pk=question_id)
-            counts = (
+            responses = list(
                 QuizResponse.objects.filter(question=question)
-                .values("answer")
-                .annotate(count=Count("id"))
+                .select_related("participant")
             )
-            total = QuizResponse.objects.filter(question=question).count()
+            counts: dict = {}
+            participants_responded = []
+            for r in responses:
+                key = str(r.answer)
+                counts[key] = counts.get(key, 0) + 1
+                participants_responded.append({
+                    "participant_id": str(r.participant.pk),
+                    "display_name": r.participant.display_name,
+                    "answer_index": r.answer,
+                })
             return {
                 "question_id": str(question.pk),
-                "counts": {c["answer"]: c["count"] for c in counts},
-                "total_responses": total,
+                "counts": counts,
+                "total_responses": len(participants_responded),
+                "responses": participants_responded,
             }
         except Exception:
-            return {"question_id": question_id, "counts": {}, "total_responses": 0}
+            return {"question_id": question_id, "counts": {}, "total_responses": 0, "responses": []}

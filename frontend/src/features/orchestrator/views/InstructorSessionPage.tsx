@@ -41,7 +41,7 @@ import PDFStage from '@/features/presentations/components/PDFStage';
 
 // Features — Branch 'main' (Gamificación y Quizzes)
 import RouletteWheel from '@/features/gamification/components/RouletteWheel';
-import QuizBuilderPage from '@/features/quiz/views/QuizBuilderPage';
+import InstructorQuizFlow from '@/features/quiz/components/InstructorQuizFlow';
 import { useQuizStore } from '@/features/quiz/store/useQuizStore';
 import { quizService } from '@/shared/services/quizService';
 
@@ -583,9 +583,15 @@ export default function InstructorSessionPage() {
             ) : activeStage.type === 'PDF' ? (
               <PDFStage key={activeStage.id} sessionId={id ?? ''} role="instructor" activeStageId={activeStage.id} currentPage={currentPdfPage} onPageChange={handlePdfPageChange} />
             ) : activeStage.type === 'QUIZ' || activeStage.type === 'GAME' ? (
-              <div className="w-full h-full overflow-y-auto bg-background text-foreground p-4">
-                <QuizBuilderPage sessionId={id ?? ''} stageId={activeStage.id} />
-              </div>
+              <InstructorQuizFlow
+                key={activeStage.id}
+                sessionId={id ?? ''}
+                stageId={activeStage.id}
+                participants={participants}
+                onLaunchQuestion={handleLaunchQuizQuestion}
+                quizLaunched={quizLaunched}
+                quizQuestionIndex={quizQuestionIndex}
+              />
             ) : (
               <motion.div
                 key={activeStageId}
@@ -632,78 +638,6 @@ export default function InstructorSessionPage() {
             {/* CLASE TAB */}
             <TabsContent value="clase" className="flex-1 overflow-y-auto m-0 p-3 space-y-4 scrollbar-thin">
 
-              {/* ── QUIZ CONTROLS (only when on a QUIZ stage) ── */}
-              {activeStage?.type === 'QUIZ' && (() => {
-                const qs = useQuizStore.getState().questions;
-                const total = qs.length;
-                const hasSaved = total > 0 && qs[0]?.id && !qs[0].id.startsWith('q_');
-                return (
-                  <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-3">
-                    <p className="text-xs font-semibold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Trophy className="w-3.5 h-3.5" /> Control del Quiz
-                    </p>
-                    {!hasSaved ? (
-                      <p className="text-xs text-zinc-400">
-                        Guarda al menos una pregunta en el editor para poder lanzarlas.
-                      </p>
-                    ) : (
-                      <>
-                        <p className="text-xs text-zinc-400">
-                          {quizLaunched
-                            ? `Pregunta ${quizQuestionIndex + 1} de ${total} activa`
-                            : `${total} pregunta${total !== 1 ? 's' : ''} lista${total !== 1 ? 's' : ''}`}
-                        </p>
-                        {!quizLaunched ? (
-                          <Button
-                            className="w-full h-10 sidebar-gradient border-0 text-white text-xs font-bold gap-2"
-                            onClick={() => handleLaunchQuizQuestion(0)}
-                          >
-                            <Trophy className="w-4 h-4" />
-                            Iniciar Quiz (Preg. 1)
-                          </Button>
-                        ) : (
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 h-9 text-xs"
-                              onClick={() => handleLaunchQuizQuestion(quizQuestionIndex)}
-                            >
-                              Relanzar
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="flex-1 h-9 text-xs sidebar-gradient border-0 text-white"
-                              disabled={quizQuestionIndex + 1 >= total}
-                              onClick={() => handleLaunchQuizQuestion(quizQuestionIndex + 1)}
-                            >
-                              {quizQuestionIndex + 1 < total
-                                ? `Preg. ${quizQuestionIndex + 2} →`
-                                : 'Fin del quiz'}
-                            </Button>
-                          </div>
-                        )}
-                        {/* List of questions */}
-                        <div className="space-y-1 max-h-36 overflow-y-auto scrollbar-thin">
-                          {qs.map((q, i) => (
-                            <button
-                              key={q.id}
-                              onClick={() => handleLaunchQuizQuestion(i)}
-                              className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg transition-colors truncate ${
-                                i === quizQuestionIndex && quizLaunched
-                                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-                                  : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
-                              }`}
-                            >
-                              {i + 1}. {q.question_text || '(sin texto)'}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
 
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Gamificación</p>

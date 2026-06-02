@@ -268,6 +268,7 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         window.dispatchEvent(new CustomEvent('quiz-launched', { detail: payload }));
         break;
       case 'QUIZ_RESULTS':
+        console.log('[Quiz] Results received:', payload);
         window.dispatchEvent(new CustomEvent('quiz-results', { detail: payload }));
         break;
       case 'PDF_PAGE_CHANGED':
