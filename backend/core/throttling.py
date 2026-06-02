@@ -12,14 +12,20 @@ class AIEndpointThrottle(UserRateThrottle):
 class WebSocketMessageThrottle:
     """
     In-memory per-connection throttle for WebSocket messages.
-    Enforces max 100 messages/minute per connection (RNF-SEC-03).
+    Default: max 100 messages/minute per connection (RNF-SEC-03).
     Applied inside consumers, not DRF middleware.
+
+    High-frequency realtime channels (collaborative board, laser pointer)
+    must raise the limit: a drawing stream emits ~10 scene updates/s plus
+    ~33 cursor updates/s, well above the 100/min chat default.
     """
 
     LIMIT = 100
     WINDOW_SECONDS = 60
 
-    def __init__(self):
+    def __init__(self, limit: int | None = None, window_seconds: int | None = None):
+        self.limit = limit if limit is not None else self.LIMIT
+        self.window_seconds = window_seconds if window_seconds is not None else self.WINDOW_SECONDS
         self._count = 0
         self._window_start = None
 
@@ -27,12 +33,12 @@ class WebSocketMessageThrottle:
         import time
 
         now = time.monotonic()
-        if self._window_start is None or (now - self._window_start) > self.WINDOW_SECONDS:
+        if self._window_start is None or (now - self._window_start) > self.window_seconds:
             self._window_start = now
             self._count = 0
 
         self._count += 1
-        return self._count <= self.LIMIT
+        return self._count <= self.limit
 
 
 class EmojiRateLimit:

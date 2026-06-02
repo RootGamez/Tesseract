@@ -103,6 +103,11 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
 
     const isMounted = useRef(true);
     useEffect(() => {
+      // Re-armar la bandera en el cuerpo del efecto: con React.StrictMode el
+      // ciclo montar→limpiar→montar dejaría isMounted en false para siempre
+      // (la limpieza la apaga y un cuerpo vacío nunca la reactiva), bloqueando
+      // todos los onChange. Reactivarla aquí lo corrige.
+      isMounted.current = true;
       return () => {
         isMounted.current = false;
         throttledSend.cancel();
@@ -154,6 +159,10 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
 
       markSynced(syncable);
       const newFiles = collectNewFiles(syncable, files);
+      console.log('[BoardWrapper] EMITIENDO SCENE_UPDATE', {
+        role, stage: activeStageIdRef.current, nDelta: syncable.length,
+        initialized: isInitialized.current,
+      });
       throttledSend(syncable, appState, activeStageIdRef.current!, newFiles);
     };
 
@@ -179,10 +188,17 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
       const handleRemoteUpdate = (e: Event) => {
         const data = (e as CustomEvent<any>).detail;
         const api = excalidrawAPIRef.current;
+        console.log('[BoardWrapper] board-update recibido', {
+          role, event: data?.event,
+          incomingStage: data?.stage_id, activeStage: activeStageIdRef.current,
+          nElements: (data?.elements || []).length, apiReady: !!api,
+        });
         if (!api || !data) return;
 
         // Ignorar updates de otras escenas
         if (data.stage_id && data.stage_id !== activeStageIdRef.current) {
+          console.warn('[BoardWrapper] DESCARTADO por stage_id distinto',
+            { incomingStage: data.stage_id, activeStage: activeStageIdRef.current });
           return;
         }
 
@@ -208,6 +224,10 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
         markSynced(reconciled);
 
         api.updateScene({ elements: reconciled });
+        console.log('[BoardWrapper] updateScene aplicado', {
+          role, local: localElements.length, remote: remoteElements.length,
+          reconciled: reconciled.length,
+        });
 
         if (isInit) {
           isInitialized.current = true;
@@ -286,7 +306,7 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
               <span className="w-3.5 h-3.5 rounded-full bg-red-500 flex items-center justify-center animate-pulse shadow-glow border border-white">
                 <span className="w-1.5 h-1.5 rounded-full bg-white" />
               </span>
-              <div className="ml-4 -mt-2 bg-card/90 backdrop-blur text-[10px] text-white px-2 py-0.5 rounded border border-border/40 font-medium">
+              <div className="ml-4 -mt-2 bg-card/90 backdrop-blur text-[10px] text-card-foreground px-2 py-0.5 rounded border border-border/40 font-medium">
                 {p.name}
               </div>
             </div>

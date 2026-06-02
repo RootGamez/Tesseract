@@ -17,12 +17,13 @@ import CollaborativePresentationStage from '@/features/presentations/components/
 import PDFStage from '@/features/presentations/components/PDFStage';
 import StudentQuizView from '@/features/quiz/components/StudentQuizView';
 import RouletteWheel from '@/features/gamification/components/RouletteWheel';
+import TimerWidget from '@/features/gamification/components/TimerWidget';
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'];
 
 export default function StudentSessionPage() {
   const { id } = useParams<{ id: string }>();
-  const { activeScene, points, pointAnimation, clearPointAnimation, rouletteState } = useSceneStore();
+  const { activeScene, points, pointAnimation, clearPointAnimation, rouletteState, timerData } = useSceneStore();
   const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, isSilenced } = useChatStore();
   const { user } = useAuthStore();
   const { sendMessage } = useWebSocket(id ?? null, 'student');
@@ -264,6 +265,13 @@ export default function StudentSessionPage() {
           winnerName={rouletteState.winnerName}
         />
       )}
+
+      {/* ── TIMER CORNER COUNTDOWN ──────────────────────── */}
+      <TimerWidget
+        role="student"
+        timerData={timerData}
+        sendMessage={sendMessage}
+      />
     </div>
   );
 }

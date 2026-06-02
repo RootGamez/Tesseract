@@ -15,6 +15,7 @@ Protocolo:
     LASER_MOVE   { x, y, active, user_id, display_name }
 """
 import json
+import asyncio
 import structlog
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -38,13 +39,24 @@ class BoardConsumer(AsyncWebsocketConsumer):
     URL: ws://host/ws/board/<session_id>/
     """
 
+    # Cadencia de persistencia (debounce). El broadcast en vivo es inmediato;
+    # el snapshot en BD se escribe a lo sumo cada SAVE_INTERVAL_SECONDS para no
+    # generar ~10 escrituras/seg por cada delta (patrón estándar Excalidraw:
+    # canal realtime separado de la persistencia).
+    SAVE_INTERVAL_SECONDS = 1.0
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.session_id = None
         self.board_group = None
-        self.throttle = WebSocketMessageThrottle()
+        # Límite alto: un stream de dibujo emite ~10 SCENE_UPDATE/s + ~33 LASER_MOVE/s.
+        # 3600/min (= 60/s) cubre el pico con margen y mantiene protección anti-abuso.
+        self.throttle = WebSocketMessageThrottle(limit=3600, window_seconds=60)
         # Estado completo en memoria por escena: { stage_id: {elements, appState, files} }
         self._stage_states = {}
+        # Escenas con cambios pendientes de persistir + loop de guardado diferido.
+        self._dirty_stages = set()
+        self._save_loop_task = None
 
     async def connect(self):
         user = self.scope.get("user")
@@ -59,6 +71,9 @@ class BoardConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.board_group, self.channel_name)
         await self.accept()
 
+        # Loop de persistencia diferida (debounce) para esta conexión.
+        self._save_loop_task = asyncio.create_task(self._periodic_save_loop())
+
         # Enviar estado completo de la escena actual al conectar (SCENE_INIT)
         stage_id = await self._get_current_stage_id()
         if stage_id:
@@ -66,6 +81,10 @@ class BoardConsumer(AsyncWebsocketConsumer):
         logger.info("board_ws_connected", session_id=self.session_id, user_id=str(user.pk))
 
     async def disconnect(self, close_code):
+        # Detener el loop y persistir lo pendiente antes de cerrar.
+        if self._save_loop_task:
+            self._save_loop_task.cancel()
+        await self._flush_dirty_stages()
         if self.board_group:
             await self.channel_layer.group_discard(self.board_group, self.channel_name)
 
@@ -119,6 +138,8 @@ class BoardConsumer(AsyncWebsocketConsumer):
         # Validar permiso de escritura (RF-BOARD-04)
         has_permission = await self._check_draw_permission()
         if not has_permission:
+            logger.warning("board_scene_update_no_permission",
+                           session_id=self.session_id, user_id=str(self.user.pk))
             await self.send(text_data=json.dumps({
                 "event": WS_ERROR,
                 "payload": {"message": "No tienes permiso para editar la pizarra."},
@@ -149,8 +170,9 @@ class BoardConsumer(AsyncWebsocketConsumer):
         if files:
             state["files"].update(files)
 
-        # Persistir el estado completo fusionado (RF-BOARD-02)
-        await self._save_board_snapshot(stage_id, state)
+        # Marcar la escena como pendiente de persistir. El guardado real lo hace
+        # el loop diferido (debounce) — no bloqueamos el broadcast con un write/delta.
+        self._dirty_stages.add(stage_id)
 
         # Broadcast SOLO del delta (en vivo) — con URLs prefirmadas para imágenes
         broadcast_files = await self._inject_presigned_urls(files) if files else {}
@@ -168,6 +190,9 @@ class BoardConsumer(AsyncWebsocketConsumer):
                     "sender_channel": self.channel_name,
                 },
             )
+            logger.info("board_broadcast_sent", session_id=self.session_id,
+                        group=self.board_group, stage_id=str(stage_id),
+                        n_elements=len(delta_elements))
         except Exception as e:
             logger.error("board_group_send_failed", error=str(e), session_id=self.session_id)
 
@@ -215,6 +240,28 @@ class BoardConsumer(AsyncWebsocketConsumer):
                 "stage_id": stage_id,
             },
         }, default=str))
+
+    # ── Persistencia diferida (debounce) ────────────────────────────────────────
+
+    async def _periodic_save_loop(self):
+        """Persiste las escenas con cambios pendientes cada SAVE_INTERVAL_SECONDS."""
+        try:
+            while True:
+                await asyncio.sleep(self.SAVE_INTERVAL_SECONDS)
+                await self._flush_dirty_stages()
+        except asyncio.CancelledError:
+            pass
+
+    async def _flush_dirty_stages(self):
+        """Guarda en BD el estado completo de las escenas marcadas como dirty."""
+        if not self._dirty_stages:
+            return
+        stage_ids = list(self._dirty_stages)
+        self._dirty_stages.clear()
+        for stage_id in stage_ids:
+            state = self._stage_states.get(stage_id)
+            if state is not None:
+                await self._save_board_snapshot(stage_id, state)
 
     # ── State management (in-memory cache + DB) ─────────────────────────────────
 
