@@ -227,6 +227,12 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         question_id = payload.get("question_id")
         question = await self._get_question(question_id)
         if not question:
+            logger.warning("quiz_launch_question_not_found",
+                           session_id=self.session_id, question_id=str(question_id))
+            await self.send(text_data=json.dumps({
+                "event": WS_ERROR,
+                "payload": {"message": "No se pudo lanzar la pregunta: no pertenece a esta sesión."},
+            }))
             return
         await self._mark_question_launched(question)
         await self.channel_layer.group_send(
