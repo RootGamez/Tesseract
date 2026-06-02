@@ -133,7 +133,15 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
           throttledSend.cancel();
           const elements = api.getSceneElementsIncludingDeleted();
           const appState = api.getAppState();
-          const files = api.getFiles();
+          // Solo enviar imágenes NUEVAS (dataURL base64). Las que vinieron del
+          // servidor tienen URL prefirmada (http) y ya están en MinIO; reenviarlas
+          // sobrescribiría su s3:// con una URL que expira (imagen gris al volver).
+          const allFiles = api.getFiles();
+          const files: Record<string, any> = {};
+          for (const fid of Object.keys(allFiles)) {
+            const url = allFiles[fid]?.dataURL;
+            if (typeof url === 'string' && url.startsWith('data:')) files[fid] = allFiles[fid];
+          }
           markSynced(elements);
           sendMessage('board', 'SCENE_UPDATE', {
             elements: Array.from(elements),
@@ -147,23 +155,46 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
       },
     }));
 
+    /**
+     * Envía de INMEDIATO (sin throttle) los archivos de imagen aún no enviados.
+     * Va aparte del throttle de deltas porque:
+     *  - Una imagen pegada puede terminar de cargar en una pasada posterior de
+     *    onChange sin que el elemento cambie de versión.
+     *  - El throttle coalesce llamadas y podría descartar justo la que llevaba el
+     *    archivo, dejando al peer en gris hasta mover la imagen.
+     * Mandamos el/los elementos imagen + sus archivos una sola vez (collectNewFiles
+     * marca el fileId como enviado).
+     */
+    const syncPendingFiles = (elements: readonly any[], allFiles: any) => {
+      const pending = collectNewFiles(elements, allFiles);
+      const fids = Object.keys(pending);
+      if (fids.length === 0) return;
+      const fidSet = new Set(fids);
+      const imgs = elements.filter((el) => el.fileId && fidSet.has(el.fileId));
+      markSynced(imgs);
+      sendMessage('board', 'SCENE_UPDATE', {
+        elements: imgs,
+        appState: {},
+        stage_id: activeStageIdRef.current!,
+        files: pending,
+      });
+    };
+
     // onChange: llamado por Excalidraw en cada edición local
     const onChange = (elements: readonly any[], appState: any, files: any) => {
       if (!isMounted.current) return;
       if (role === 'student' && !canDraw) return;
       if (!isInitialized.current) return;
 
-      // Solo emitir los elementos que cambiaron (delta), no toda la escena
+      // 1) Archivos de imagen nuevos → envío inmediato y fiable (ver arriba).
+      syncPendingFiles(elements, files);
+
+      // 2) Deltas de elementos (posición, trazos, etc.) → throttled.
       const syncable = collectSyncable(elements);
       if (syncable.length === 0) return;
 
       markSynced(syncable);
-      const newFiles = collectNewFiles(syncable, files);
-      console.log('[BoardWrapper] EMITIENDO SCENE_UPDATE', {
-        role, stage: activeStageIdRef.current, nDelta: syncable.length,
-        initialized: isInitialized.current,
-      });
-      throttledSend(syncable, appState, activeStageIdRef.current!, newFiles);
+      throttledSend(syncable, appState, activeStageIdRef.current!, {});
     };
 
     const onPointerUpdate = (payload: any) => {

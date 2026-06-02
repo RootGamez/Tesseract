@@ -168,7 +168,22 @@ class BoardConsumer(AsyncWebsocketConsumer):
         if app_state:
             state["appState"] = app_state
         if files:
-            state["files"].update(files)
+            # Conservar referencias s3:// ya conocidas. Si el cliente reenvía la
+            # URL prefirmada (http) de una imagen existente, NO sobrescribir su
+            # s3://: esa URL expira y la imagen se vería gris al reabrir la escena.
+            for fid, fdata in files.items():
+                url = (fdata or {}).get("dataURL", "")
+                prev = state["files"].get(fid)
+                if (
+                    prev
+                    and isinstance(url, str)
+                    and not url.startswith("s3://")
+                    and not url.startswith("data:")
+                    and isinstance(prev.get("dataURL"), str)
+                    and prev["dataURL"].startswith("s3://")
+                ):
+                    continue  # mantener el s3:// existente
+                state["files"][fid] = fdata
 
         # Marcar la escena como pendiente de persistir. El guardado real lo hace
         # el loop diferido (debounce) — no bloqueamos el broadcast con un write/delta.
@@ -231,6 +246,20 @@ class BoardConsumer(AsyncWebsocketConsumer):
         """Envía el estado completo de una escena a este cliente."""
         state = await self._get_stage_state(stage_id)
         files = await self._inject_presigned_urls(state["files"]) if state["files"] else {}
+        # Diagnóstico imágenes: qué fileIds piden los elementos vs qué files hay.
+        image_file_ids = [
+            el.get("fileId") for el in state["elements"]
+            if isinstance(el, dict) and el.get("type") == "image" and not el.get("isDeleted")
+        ]
+        logger.info(
+            "board_scene_init_files",
+            user_id=str(getattr(self, "user", None) and self.user.pk),
+            stage_id=str(stage_id),
+            image_file_ids=image_file_ids,
+            raw_file_keys=list(state["files"].keys()),
+            raw_url_prefixes={k: str(v.get("dataURL", ""))[:10] for k, v in state["files"].items()},
+            signed_file_keys=list(files.keys()),
+        )
         await self.send(text_data=json.dumps({
             "event": SCENE_INIT,
             "payload": {
@@ -408,8 +437,16 @@ class BoardConsumer(AsyncWebsocketConsumer):
             data_url = file_data.get("dataURL", "")
             new_file_data = file_data.copy()
 
+            s3_key = None
             if isinstance(data_url, str) and data_url.startswith("s3://"):
                 s3_key = data_url.replace("s3://", "")
+            elif isinstance(data_url, str) and not data_url.startswith("data:"):
+                # Auto-recuperación: snapshots viejos guardaron una URL prefirmada
+                # (http) ya expirada. La clave en MinIO es determinista, así que la
+                # reconstruimos y re-firmamos en vez de mostrar la imagen en gris.
+                s3_key = f"board_files/{self.session_id}/{file_id}"
+
+            if s3_key:
                 try:
                     presigned = generate_presigned_url(s3_key)
                     new_file_data["dataURL"] = presigned
