@@ -204,7 +204,14 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         if timer:
             await self.channel_layer.group_send(
                 self.game_group,
-                {"type": "timer.paused", "event": TIMER_PAUSED, "payload": {"timer_id": timer_id}},
+                {
+                    "type": "timer.paused",
+                    "event": TIMER_PAUSED,
+                    "payload": {
+                        "timer_id": timer_id,
+                        "remaining_seconds": timer.remaining_seconds or 0
+                    }
+                },
             )
 
     async def _handle_timer_cancelled(self, payload):
@@ -398,7 +405,12 @@ class GamificationConsumer(AsyncWebsocketConsumer):
             timer.state = state
             if state == "PAUSED":
                 timer.paused_at = timezone.now()
-            timer.save(update_fields=["state", "paused_at"])
+                if timer.end_timestamp_utc:
+                    delta = timer.end_timestamp_utc - timezone.now()
+                    timer.remaining_seconds = max(0, int(delta.total_seconds()))
+                timer.save(update_fields=["state", "paused_at", "remaining_seconds"])
+            else:
+                timer.save(update_fields=["state"])
             return timer
         except Timer.DoesNotExist:
             return None

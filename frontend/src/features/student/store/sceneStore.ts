@@ -8,7 +8,14 @@ export interface SceneState {
   points: number;
   pointAnimation: { amount: number; total: number; id: number } | null;
   spinnerData: any | null;
-  timerData: any | null;
+  timerData: {
+    timerId: string;
+    label: string;
+    endTimestampUtc: string | null;
+    durationSeconds: number;
+    isPaused: boolean;
+    remainingSeconds: number;
+  } | null;
   canDraw: boolean;
   rouletteState: {
     isOpen: boolean;

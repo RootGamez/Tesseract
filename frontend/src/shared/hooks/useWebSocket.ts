@@ -295,10 +295,30 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         a.setSceneState({ rouletteState: null });
         break;
       case 'TIMER_STARTED':
-        a.triggerTimer(payload);
+        a.setSceneState({
+          timerData: {
+            timerId: payload.timer_id,
+            label: payload.label,
+            endTimestampUtc: payload.end_timestamp_utc,
+            durationSeconds: payload.duration_seconds,
+            isPaused: false,
+            remainingSeconds: payload.duration_seconds,
+          },
+        });
         break;
-      case 'TIMER_PAUSED':
+      case 'TIMER_PAUSED': {
+        const currentTimer = useSceneStore.getState().timerData;
+        a.setSceneState({
+          timerData: currentTimer ? {
+            ...currentTimer,
+            isPaused: true,
+            remainingSeconds: payload.remaining_seconds ?? currentTimer.remainingSeconds,
+          } : null,
+        });
+        break;
+      }
       case 'TIMER_CANCELLED':
+        a.setSceneState({ timerData: null });
         break;
       case 'QUIZ_LAUNCHED':
         a.setSceneState({ activeScene: 'QUIZ', stageData: payload });
