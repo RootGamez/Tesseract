@@ -76,6 +76,7 @@ class ResourceUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        from django.db.models import Max
         from apps.live_sessions.models import LiveSession, Stage
         try:
             session = LiveSession.objects.get(pk=session_id, instructor=request.user)
@@ -94,18 +95,18 @@ class ResourceUploadView(APIView):
 
         try:
             if resource_type == "PDF" and (stage is None or stage.stage_type != "PDF"):
-                template = session.template
-                if template is not None:
-                    stage = Stage.objects.create(
-                        template=template,
-                        title=os.path.splitext(uploaded_file.name)[0],
-                        stage_type="PDF",
-                        order=Stage.objects.filter(template=template).count(),
-                        duration_estimated_minutes=10,
-                        config={},
-                    )
-                    session.current_stage = stage
-                    session.save(update_fields=["current_stage"])
+                agg = Stage.objects.filter(session=session).aggregate(max_order=Max("order"))
+                next_order = (agg["max_order"] + 1) if agg["max_order"] is not None else 0
+                stage = Stage.objects.create(
+                    session=session,
+                    title=os.path.splitext(uploaded_file.name)[0],
+                    stage_type="PDF",
+                    order=next_order,
+                    duration_estimated_minutes=10,
+                    config={},
+                )
+                session.current_stage = stage
+                session.save(update_fields=["current_stage"])
 
             upload_file(uploaded_file, object_key, uploaded_file.content_type or "application/octet-stream")
 

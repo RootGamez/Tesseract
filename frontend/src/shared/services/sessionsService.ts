@@ -67,12 +67,33 @@ export const sessionsService = {
     const { data } = await apiClient.get<any[]>(`/api/v1/sessions/live/${sessionId}/participants/`);
     return data;
   },
-  async addStage(templateId: string, payload: { title: string; stage_type: string; duration_estimated_minutes: number }): Promise<any> {
-    const { data } = await apiClient.post(`/api/v1/sessions/templates/${templateId}/stages/add/`, payload);
+  // Stage management operates on the session's OWN stages (copied from the
+  // template at creation), so a live class can be edited without touching the
+  // original template — and classes created without a template work too.
+  async addStage(
+    sessionId: string,
+    payload: { title: string; stage_type: string; duration_estimated_minutes: number; config?: Record<string, unknown> }
+  ): Promise<any> {
+    const { data } = await apiClient.post(`/api/v1/sessions/live/${sessionId}/stages/add/`, payload);
     return data;
   },
-  async deleteStage(templateId: string, stageId: string): Promise<any> {
-    const { data } = await apiClient.post(`/api/v1/sessions/templates/${templateId}/stages/delete/`, { stage_id: stageId });
+  async updateStage(
+    sessionId: string,
+    stageId: string,
+    payload: Partial<{ title: string; duration_estimated_minutes: number; config: Record<string, unknown>; initial_board_state: Record<string, unknown> }>
+  ): Promise<any> {
+    const { data } = await apiClient.post(`/api/v1/sessions/live/${sessionId}/stages/update/`, {
+      stage_id: stageId,
+      ...payload,
+    });
+    return data;
+  },
+  async deleteStage(sessionId: string, stageId: string): Promise<any> {
+    const { data } = await apiClient.post(`/api/v1/sessions/live/${sessionId}/stages/delete/`, { stage_id: stageId });
+    return data;
+  },
+  async reorderStages(sessionId: string, stageIds: string[]): Promise<any> {
+    const { data } = await apiClient.patch(`/api/v1/sessions/live/${sessionId}/stages/reorder/`, { stage_ids: stageIds });
     return data;
   },
 };

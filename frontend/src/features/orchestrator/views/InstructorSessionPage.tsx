@@ -72,7 +72,6 @@ export default function InstructorSessionPage() {
   const [isTimerConfigOpen, setIsTimerConfigOpen] = useState(false);
   const { timerData } = useSceneStore();
 
-  const [templateId, setTemplateId] = useState<string>('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -123,7 +122,6 @@ export default function InstructorSessionPage() {
   const fetchSession = async () => {
     if (!id) return;
     if (id === 'demo') {
-      setTemplateId('demo-template');
       useOrchestratorStore.getState().syncState({
         sessionInfo: { title: 'Tesseract Live Class (Demo)', duration: 60 },
         stages: [
@@ -180,7 +178,6 @@ export default function InstructorSessionPage() {
         activeStageId: session.current_stage?.id || (mappedStages[0]?.id || ''),
         participants: mappedParticipants,
       });
-      setTemplateId(session.template_id || '');
       setSessionState(session.state === 'PAUSED' ? 'PAUSED' : 'LIVE');
     } catch (err) {
       console.error('Error fetching session:', err);
@@ -265,25 +262,7 @@ export default function InstructorSessionPage() {
       return;
     }
 
-    let resolvedTemplateId = templateId;
-    if (!resolvedTemplateId && id) {
-      try {
-        const freshSession = await sessionsService.get(id);
-        resolvedTemplateId = freshSession.template_id || '';
-        if (resolvedTemplateId) setTemplateId(resolvedTemplateId);
-      } catch (e) {
-        console.error('Could not re-fetch session for templateId:', e);
-      }
-    }
-
-    if (!resolvedTemplateId) {
-      toast({
-        title: 'Error de Plantilla',
-        description: 'No se detectó una plantilla válida asociada a esta sesión.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (!id) return;
 
     if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && !pptFile) {
       toast({
@@ -305,8 +284,9 @@ export default function InstructorSessionPage() {
       if (newStageType === 'QUIZ' && selectedQuizId) {
         payload.config = { quiz_id: selectedQuizId };
       }
-      
-      const created = await sessionsService.addStage(resolvedTemplateId, payload);
+
+      // Stages belong to the session itself (not the template).
+      const created = await sessionsService.addStage(id, payload);
 
       if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && pptFile) {
         const extension = pptFile.name.split('.').pop()?.toLowerCase();
@@ -534,7 +514,7 @@ export default function InstructorSessionPage() {
                         e.stopPropagation();
                         if (confirm(`¿Eliminar la escena "${stage.title}"?`)) {
                           try {
-                            await sessionsService.deleteStage(templateId, stage.id);
+                            await sessionsService.deleteStage(id!, stage.id);
                             const remaining = stages.filter(s => s.id !== stage.id);
                             if (isActive && remaining.length > 0) {
                               await sessionsService.changeStage(id!, remaining[0].id);
@@ -630,7 +610,7 @@ export default function InstructorSessionPage() {
                           e.stopPropagation();
                           if (confirm(`¿Eliminar la escena "${stage.title}"?`)) {
                             try {
-                              await sessionsService.deleteStage(templateId, stage.id);
+                              await sessionsService.deleteStage(id!, stage.id);
                               const remaining = stages.filter(s => s.id !== stage.id);
                               if (isActive && remaining.length > 0) {
                                 await sessionsService.changeStage(id!, remaining[0].id);

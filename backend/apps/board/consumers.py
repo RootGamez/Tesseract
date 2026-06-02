@@ -310,7 +310,7 @@ class BoardConsumer(AsyncWebsocketConsumer):
             target_stage = None
             if stage_id:
                 try:
-                    target_stage = Stage.objects.get(pk=stage_id, template=session.template)
+                    target_stage = Stage.objects.get(pk=stage_id, session=session)
                 except Stage.DoesNotExist:
                     pass
             if not target_stage:
@@ -371,7 +371,7 @@ class BoardConsumer(AsyncWebsocketConsumer):
             target_stage = None
             if stage_id:
                 try:
-                    target_stage = Stage.objects.get(pk=stage_id, template=session.template)
+                    target_stage = Stage.objects.get(pk=stage_id, session=session)
                 except Stage.DoesNotExist:
                     pass
             if not target_stage:

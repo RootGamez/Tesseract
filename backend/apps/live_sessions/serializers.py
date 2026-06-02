@@ -86,9 +86,8 @@ class LiveSessionSerializer(serializers.ModelSerializer):
         ]
 
     def get_stages(self, obj):
-        if obj.template:
-            return StageSerializer(obj.template.stages.order_by('order'), many=True).data
-        return []
+        # Sessions own their stages (copied from the template at creation time).
+        return StageSerializer(obj.stages.order_by("order"), many=True).data
 
     def get_online_count(self, obj):
         return obj.participants.filter(connection_status="ONLINE").count()
@@ -99,12 +98,22 @@ class LiveSessionSerializer(serializers.ModelSerializer):
 
 
 class LiveSessionCreateSerializer(serializers.ModelSerializer):
+    # The frontend sends `template_id`; map it onto the `template` FK so a session
+    # can be created from a template (or without one, for a blank class).
+    template_id = serializers.PrimaryKeyRelatedField(
+        source="template",
+        queryset=ClassTemplate.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+
     class Meta:
         model = LiveSession
-        fields = ["id", "title", "template", "scheduled_at", "is_dry_run", "join_code", "state"]
+        fields = ["id", "title", "template_id", "scheduled_at", "is_dry_run", "join_code", "state"]
         read_only_fields = ["id", "join_code", "state"]
 
-    def validate_template(self, template):
+    def validate_template_id(self, template):
         request = self.context["request"]
         if template and template.owner != request.user:
             raise serializers.ValidationError("No tienes permiso para usar esta plantilla.")

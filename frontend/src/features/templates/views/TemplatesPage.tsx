@@ -74,11 +74,9 @@ export default function TemplatesPage() {
         is_public: false,
         estimated_duration_minutes: 60,
         tags: [],
-        stages: [], // enviar array vacío explícitamente
+        stages: [],
       };
-      console.log('Enviando payload para crear plantilla:', payload);
       const created = await templatesService.create(payload);
-      console.log('Respuesta del backend al crear plantilla:', created);
       setCreateFormOpen(false);
       toast({ title: 'Plantilla creada', description: 'Redirigiendo al editor...' });
       navigate(`/templates/builder/${created.id}`);

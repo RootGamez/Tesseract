@@ -74,11 +74,13 @@ class ClassTemplate(BaseModel):
             owner=owner,
             title=f"Copia de {self.title}",
             description=self.description,
+            is_public=self.is_public,
             estimated_duration_minutes=self.estimated_duration_minutes,
-            tags=self.tags,
+            tags=list(self.tags),
+            thumbnail=self.thumbnail,
         )
-        for stage in self.stages.all():
-            Stage.objects.create(
+        Stage.objects.bulk_create([
+            Stage(
                 template=new_template,
                 title=stage.title,
                 stage_type=stage.stage_type,
@@ -87,6 +89,8 @@ class ClassTemplate(BaseModel):
                 config=stage.config,
                 initial_board_state=stage.initial_board_state,
             )
+            for stage in self.stages.order_by('order')
+        ])
         return new_template
 
 
@@ -97,12 +101,27 @@ class Stage(BaseModel):
     Minimum unit of a class template or live session.
     RF-SESSION-01: Each stage has type, order, and own config.
     RF-BOARD-05: BOARD stages can have pre-filled content.
+
+    A stage belongs to exactly one parent: either a ClassTemplate (the reusable
+    blueprint) or a LiveSession (an independent, editable copy created when the
+    template is instantiated). Sessions own their stages so editing a live class
+    never mutates the original template, and manually-created sessions (no
+    template) can still have their own stages.
     """
 
     template = models.ForeignKey(
         ClassTemplate,
         on_delete=models.CASCADE,
         related_name="stages",
+        null=True,
+        blank=True,
+    )
+    session = models.ForeignKey(
+        "LiveSession",
+        on_delete=models.CASCADE,
+        related_name="stages",
+        null=True,
+        blank=True,
     )
     title = models.CharField(max_length=255)
     stage_type = models.CharField(max_length=20, choices=StageType.choices, db_index=True)
@@ -118,10 +137,22 @@ class Stage(BaseModel):
         verbose_name = "Etapa"
         verbose_name_plural = "Etapas"
         ordering = ["order"]
-        unique_together = [("template", "order")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["template", "order"],
+                condition=models.Q(template__isnull=False),
+                name="uniq_template_stage_order",
+            ),
+            models.UniqueConstraint(
+                fields=["session", "order"],
+                condition=models.Q(session__isnull=False),
+                name="uniq_session_stage_order",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.title} [{self.stage_type}] — {self.template.title}"
+        parent = self.template.title if self.template else (self.session.title if self.session else "—")
+        return f"{self.title} [{self.stage_type}] — {parent}"
 
 
 # ── Live Session ───────────────────────────────────────────────────────────────
@@ -191,6 +222,27 @@ class LiveSession(BaseModel):
 
     def __str__(self):
         return f"{self.title} [{self.state}] — {self.join_code}"
+
+    def populate_stages_from_template(self):
+        """
+        Copy the template's stages into this session as independent, editable copies.
+        Called once at creation so the live class is decoupled from the template:
+        editing scenes here never mutates the original template.
+        """
+        if not self.template:
+            return
+        Stage.objects.bulk_create([
+            Stage(
+                session=self,
+                title=stage.title,
+                stage_type=stage.stage_type,
+                order=stage.order,
+                duration_estimated_minutes=stage.duration_estimated_minutes,
+                config=stage.config,
+                initial_board_state=stage.initial_board_state,
+            )
+            for stage in self.template.stages.order_by("order")
+        ])
 
     @property
     def is_live(self):

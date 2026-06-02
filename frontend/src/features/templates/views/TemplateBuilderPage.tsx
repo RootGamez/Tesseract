@@ -153,14 +153,14 @@ export default function TemplateBuilderPage() {
     }
   }, [activeStageId]);
 
-  // Mock sendMessage for Excalidraw interaction
+  // Intercepts Excalidraw SCENE_UPDATE events and persists state locally (including files/images)
   const handleBoardUpdate = (
     channel: 'sessions' | 'chat' | 'board' | 'gamification',
     event: string,
     payload: any
   ) => {
     if (channel === 'board' && event === 'SCENE_UPDATE' && activeStageId) {
-      const { elements, appState } = payload;
+      const { elements, appState, files } = payload;
       setStages(current => current.map(s => {
         if (s.id === activeStageId) {
           return {
@@ -168,6 +168,7 @@ export default function TemplateBuilderPage() {
             initial_board_state: {
               elements,
               appState,
+              ...(files ? { files } : {}),
             }
           };
         }
@@ -244,24 +245,22 @@ export default function TemplateBuilderPage() {
     }
   };
 
-  // Reorder stages
+  // Reorder stages (optimistic update, reverts on failure)
   const handleMoveStage = async (index: number, direction: 'up' | 'down') => {
     if (!id) return;
     const targetIdx = direction === 'up' ? index - 1 : index + 1;
     if (targetIdx < 0 || targetIdx >= stages.length) return;
 
+    const previousStages = [...stages];
     const reordered = [...stages];
-    const temp = reordered[index];
-    reordered[index] = reordered[targetIdx];
-    reordered[targetIdx] = temp;
+    [reordered[index], reordered[targetIdx]] = [reordered[targetIdx], reordered[index]];
 
-    // Set local state first for quick UI update
     setStages(reordered);
 
     try {
-      const stageIds = reordered.map(s => s.id!).filter(Boolean);
-      await templatesService.reorderStages(id, stageIds);
+      await templatesService.reorderStages(id, reordered.map(s => s.id!).filter(Boolean));
     } catch {
+      setStages(previousStages);
       toast({ title: 'Error de ordenamiento', description: 'No se pudo persistir el nuevo orden en el servidor.', variant: 'destructive' });
     }
   };
@@ -289,134 +288,101 @@ export default function TemplateBuilderPage() {
     }));
   };
 
-  // Associate Quiz ID to active stage config
+  // Associate (or clear) Quiz ID on active stage config
   const handleSelectQuiz = (quizId: string) => {
     if (!activeStageId) return;
     setStages(current => current.map(s => {
       if (s.id === activeStageId) {
-        return {
-          ...s,
-          config: {
-            ...s.config,
-            quiz_id: quizId,
-          }
-        };
+        const newConfig = { ...s.config };
+        if (quizId) {
+          newConfig.quiz_id = quizId;
+        } else {
+          delete newConfig.quiz_id;
+        }
+        return { ...s, config: newConfig };
       }
       return s;
     }));
   };
 
-  // Final Action: Save as Template
+  // Persists current template metadata + all stage configs to the backend
+  const persistTemplateChanges = async () => {
+    if (!id) return;
+
+    if (activeStage?.stage_type === 'BOARD') {
+      await saveBoardState(activeStageId);
+    }
+
+    const parsedTags = tags.split(',').map(t => t.trim()).filter(Boolean);
+    await templatesService.update(id, {
+      title: title.trim(),
+      description: description.trim(),
+      estimated_duration_minutes: duration,
+      tags: parsedTags,
+      is_public: false,
+    });
+
+    await Promise.all(
+      stages
+        .filter(s => s.id)
+        .map(s =>
+          templatesService.updateStage(id, s.id!, {
+            title: s.title,
+            duration_estimated_minutes: s.duration_estimated_minutes,
+            config: s.config,
+          })
+        )
+    );
+  };
+
   const handleSaveAsTemplate = async () => {
     if (!id) return;
     setSaving(true);
     try {
-      // Save current active board drawings first
-      if (activeStage && activeStage.stage_type === 'BOARD') {
-        await saveBoardState(activeStageId);
-      }
-
-      // Update metadata and stages details
-      const parsedTags = tags.split(',').map(t => t.trim()).filter(Boolean);
-      await templatesService.update(id, {
-        title: title.trim(),
-        description: description.trim(),
-        estimated_duration_minutes: duration,
-        tags: parsedTags,
-        is_public: false,
-      });
-
-      // Update stage details like config or names
-      for (const s of stages) {
-        if (s.id) {
-          await templatesService.updateStage(id, s.id, {
-            title: s.title,
-            duration_estimated_minutes: s.duration_estimated_minutes,
-            config: s.config,
-          });
-        }
-      }
-
+      await persistTemplateChanges();
       toast({ title: 'Plantilla guardada', description: 'La plantilla y todas sus escenas fueron guardadas con éxito.' });
       navigate('/templates');
-    } catch (err) {
+    } catch {
       toast({ title: 'Error al guardar', description: 'Ocurrió un problema al guardar los datos.', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
   };
 
-  // Final Action: Save as Class
   const handleSaveAsClass = async () => {
     if (!id) return;
     setSaving(true);
     try {
-      // 1. Save template changes
-      if (activeStage && activeStage.stage_type === 'BOARD') {
-        await saveBoardState(activeStageId);
-      }
+      await persistTemplateChanges();
 
-      const parsedTags = tags.split(',').map(t => t.trim()).filter(Boolean);
-      await templatesService.update(id, {
+      toast({ title: 'Creando clase...', description: 'Inicializando sesión basándose en la plantilla...' });
+      const session = await sessionsService.create({
         title: title.trim(),
-        description: description.trim(),
-        estimated_duration_minutes: duration,
-        tags: parsedTags,
-        is_public: false,
+        template_id: id,
       });
 
-      for (const s of stages) {
-        if (s.id) {
-          await templatesService.updateStage(id, s.id, {
-            title: s.title,
-            duration_estimated_minutes: s.duration_estimated_minutes,
-            config: s.config,
-          });
-        }
-      }
-
-      // 2. Create the live session
-      toast({ title: 'Creando clase...', description: 'Inicializando sesión basándose en la plantilla...' });
-      let session;
-      try {
-        session = await sessionsService.create({
-          title: title.trim(),
-          template_id: id,
-        });
-      } catch {
-        // demo mode fallback
-        toast({ title: 'Clase creada (demo)', description: 'Backend no disponible, entrando a modo demostración.' });
-        navigate('/session/demo/instructor');
-        return;
-      }
-
-      // 3. Upload staged PDF/Presentation files to session stages if any
       const stagedStageIds = Object.keys(localFiles);
       if (stagedStageIds.length > 0) {
         toast({ title: 'Sincronizando archivos', description: 'Cargando documentos pre-configurados a la clase...' });
-        for (const stageId of stagedStageIds) {
-          const file = localFiles[stageId];
-          const ext = file.name.split('.').pop()?.toLowerCase();
-          const type = ext === 'pdf' ? 'PDF' : 'PRESENTATION';
-
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('resource_type', type);
-          formData.append('stage_id', stageId);
-
-          try {
-            await apiClient.post(`/api/v1/resources/sessions/${session.id}/upload/`, formData, {
+        await Promise.allSettled(
+          stagedStageIds.map(stageId => {
+            const file = localFiles[stageId];
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            const type = ext === 'pdf' ? 'PDF' : 'PRESENTATION';
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('resource_type', type);
+            formData.append('stage_id', stageId);
+            return apiClient.post(`/api/v1/resources/sessions/${session.id}/upload/`, formData, {
               headers: { 'Content-Type': 'multipart/form-data' },
             });
-          } catch (uploadErr) {
-            console.error('Failed to upload file for stage:', stageId, uploadErr);
-          }
-        }
+          })
+        );
       }
 
       toast({ title: '¡Clase inicializada!', description: 'Redirigiendo al panel del instructor...' });
       navigate(`/session/${session.id}/instructor`);
-    } catch (err) {
+    } catch {
       toast({ title: 'Error al iniciar clase', description: 'No se pudo inicializar la clase correctamente.', variant: 'destructive' });
     } finally {
       setSaving(false);

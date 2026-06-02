@@ -5,7 +5,8 @@ RF-SESSION-02: Motor de estados de sesión
 RF-SESSION-03: Modo dry-run
 RF-SESSION-04: Panel Director de Orquesta
 """
-from django.db.models import Prefetch
+from django.db import transaction
+from django.db.models import Max, Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import action
@@ -34,13 +35,114 @@ from .serializers import (
 from .state_machine import SessionStateMachine, SessionStateMachineError
 
 
+# ── Reusable stage management ───────────────────────────────────────────────────
+
+# Fields a client may modify on an existing stage; stage_type and order are
+# managed by the system (order via the dedicated reorder endpoint).
+EDITABLE_STAGE_FIELDS = {"title", "duration_estimated_minutes", "config", "initial_board_state"}
+
+
+def _resequence_stage_orders(stages):
+    """
+    Persist sequential 0..n-1 orders for the given ordered list of stages.
+    Done in two passes (shift to a safe offset, then to the final values) so the
+    unique (parent, order) constraint is never violated mid-update.
+    """
+    if not stages:
+        return
+    offset = len(stages) + 1
+    for i, stage in enumerate(stages):
+        stage.order = offset + i
+    Stage.objects.bulk_update(stages, ["order"])
+    for i, stage in enumerate(stages):
+        stage.order = i
+    Stage.objects.bulk_update(stages, ["order"])
+
+
+class StageManagementMixin:
+    """
+    Reusable add/update/delete/reorder stage actions for any viewset whose detail
+    object owns an ordered set of Stages (a ClassTemplate or a LiveSession).
+
+    Subclasses implement `stage_parent_filter()` to return the kwargs that bind a
+    Stage to its parent, e.g. ``{"template": obj}`` or ``{"session": obj}``.
+    """
+
+    def stage_parent_filter(self, obj):
+        raise NotImplementedError
+
+    def _stages_qs(self, obj):
+        return Stage.objects.filter(**self.stage_parent_filter(obj))
+
+    @action(detail=True, methods=["post"], url_path="stages/add")
+    def add_stage(self, request, pk=None):
+        """Body: {"title": "...", "stage_type": "BOARD", "duration_estimated_minutes": 10, "config": {...}}"""
+        obj = self.get_object()
+        serializer = StageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            agg = self._stages_qs(obj).aggregate(max_order=Max("order"))
+            new_order = (agg["max_order"] + 1) if agg["max_order"] is not None else 0
+            stage = serializer.save(order=new_order, **self.stage_parent_filter(obj))
+        return Response(StageSerializer(stage).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="stages/update")
+    def update_stage(self, request, pk=None):
+        """Body: {"stage_id": "<uuid>", "title": "...", "config": {...}, "initial_board_state": {...}}"""
+        obj = self.get_object()
+        stage_id = request.data.get("stage_id")
+        if not stage_id:
+            return Response({"detail": "stage_id es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        stage = get_object_or_404(Stage, pk=stage_id, **self.stage_parent_filter(obj))
+        update_data = {k: v for k, v in request.data.items() if k in EDITABLE_STAGE_FIELDS}
+
+        serializer = StageSerializer(stage, data=update_data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="stages/delete")
+    def delete_stage(self, request, pk=None):
+        """Body: {"stage_id": "<uuid>"}"""
+        obj = self.get_object()
+        stage_id = request.data.get("stage_id")
+        if not stage_id:
+            return Response({"detail": "stage_id es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        stage = get_object_or_404(Stage, pk=stage_id, **self.stage_parent_filter(obj))
+        with transaction.atomic():
+            stage.delete()
+            _resequence_stage_orders(list(self._stages_qs(obj).order_by("order")))
+        return Response({"detail": "Etapa eliminada."})
+
+    @action(detail=True, methods=["put", "patch"], url_path="stages/reorder")
+    def reorder_stages(self, request, pk=None):
+        """Body: {"stage_ids": ["uuid1", "uuid2", ...]} — full ordered list."""
+        obj = self.get_object()
+        stage_ids = request.data.get("stage_ids", [])
+        if not stage_ids:
+            return Response({"detail": "stage_ids es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        stage_map = {str(s.pk): s for s in self._stages_qs(obj)}
+        if any(sid not in stage_map for sid in stage_ids):
+            return Response({"detail": "Algunas etapas no pertenecen a este recurso."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            _resequence_stage_orders([stage_map[sid] for sid in stage_ids])
+        return Response({"detail": "Orden actualizado."})
+
+
 # ── Class Templates ───────────────────────────────────────────────────────────
 
-class ClassTemplateViewSet(ModelViewSet):
+class ClassTemplateViewSet(StageManagementMixin, ModelViewSet):
     """
     CRUD + clone for ClassTemplate.
     RF-SESSION-01
     """
+
+    def stage_parent_filter(self, obj):
+        return {"template": obj}
 
     def get_queryset(self):
         user = self.request.user
@@ -56,7 +158,10 @@ class ClassTemplateViewSet(ModelViewSet):
         return ClassTemplateSerializer
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy", "clone"):
+        if self.action in (
+            "create", "update", "partial_update", "destroy", "clone",
+            "add_stage", "update_stage", "delete_stage", "reorder_stages",
+        ):
             return [IsInstructor()]
         return [permissions.IsAuthenticated()]
 
@@ -73,84 +178,14 @@ class ClassTemplateViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=True, methods=["put", "patch"], url_path="stages/reorder")
-    def reorder_stages(self, request, pk=None):
-        """
-        PATCH /api/v1/sessions/templates/<pk>/stages/reorder/
-        Accepts: {"stage_ids": ["uuid1", "uuid2", ...]} ordered list.
-        """
-        template = self.get_object()
-        stage_ids = request.data.get("stage_ids", [])
-        stages = Stage.objects.filter(template=template)
-        stage_map = {str(s.pk): s for s in stages}
-
-        for i, stage_id in enumerate(stage_ids):
-            if stage_id in stage_map:
-                stage_map[stage_id].order = i
-                stage_map[stage_id].save(update_fields=["order"])
-
-        return Response({"detail": "Orden actualizado."})
-
-    @action(detail=True, methods=["post"], url_path="stages/add")
-    def add_stage(self, request, pk=None):
-        """
-        POST /api/v1/sessions/templates/<pk>/stages/add/
-        Body: {"title": "...", "stage_type": "BOARD", "duration_estimated_minutes": 10}
-        """
-        template = self.get_object()
-        serializer = StageSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        max_order = Stage.objects.filter(template=template).count()
-        stage = serializer.save(template=template, order=max_order)
-        return Response(StageSerializer(stage).data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=["post"], url_path="stages/delete")
-    def delete_stage(self, request, pk=None):
-        """
-        POST /api/v1/sessions/templates/<pk>/stages/delete/
-        Body: {"stage_id": "<uuid>"}
-        """
-        template = self.get_object()
-        stage_id = request.data.get("stage_id")
-        stage = get_object_or_404(Stage, pk=stage_id, template=template)
-        stage.delete()
-        
-        # Reorder remaining stages
-        remaining = Stage.objects.filter(template=template).order_by("order")
-        for i, s in enumerate(remaining):
-            if s.order != i:
-                s.order = i
-                s.save(update_fields=["order"])
-                
-        return Response({"detail": "Etapa eliminada."})
-
-    @action(detail=True, methods=["post"], url_path="stages/update")
-    def update_stage(self, request, pk=None):
-        """
-        POST /api/v1/sessions/templates/<pk>/stages/update/
-        Body: {"stage_id": "<uuid>", "title": "...", "duration_estimated_minutes": 10, "config": {...}, "initial_board_state": {...}}
-        """
-        template = self.get_object()
-        stage_id = request.data.get("stage_id")
-        stage = get_object_or_404(Stage, pk=stage_id, template=template)
-
-        if "title" in request.data:
-            stage.title = request.data["title"]
-        if "duration_estimated_minutes" in request.data:
-            stage.duration_estimated_minutes = request.data["duration_estimated_minutes"]
-        if "config" in request.data:
-            stage.config = request.data["config"]
-        if "initial_board_state" in request.data:
-            stage.initial_board_state = request.data["initial_board_state"]
-
-        stage.save()
-        return Response(StageSerializer(stage).data)
-
 
 # ── Live Sessions ─────────────────────────────────────────────────────────────
 
-class LiveSessionViewSet(ModelViewSet):
+class LiveSessionViewSet(StageManagementMixin, ModelViewSet):
     """CRUD for LiveSession — instructor only."""
+
+    def stage_parent_filter(self, obj):
+        return {"session": obj}
 
     def get_queryset(self):
         user = self.request.user
@@ -171,7 +206,10 @@ class LiveSessionViewSet(ModelViewSet):
         return LiveSessionSerializer
 
     def get_permissions(self):
-        if self.action == "create":
+        if self.action in (
+            "create", "transition", "change_stage",
+            "add_stage", "update_stage", "delete_stage", "reorder_stages",
+        ):
             return [IsInstructor()]
         return [permissions.IsAuthenticated()]
 
@@ -184,7 +222,15 @@ class LiveSessionViewSet(ModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
-        serializer.save(instructor=self.request.user)
+        with transaction.atomic():
+            instance = serializer.save(instructor=self.request.user)
+            # Copy template stages into the session so the live class is fully
+            # editable without ever touching the original template.
+            instance.populate_stages_from_template()
+            first_stage = instance.stages.order_by("order").first()
+            if first_stage:
+                instance.current_stage = first_stage
+                instance.save(update_fields=["current_stage"])
 
     @action(detail=True, methods=["post"], url_path="transition")
     def transition(self, request, pk=None):
@@ -232,7 +278,7 @@ class LiveSessionViewSet(ModelViewSet):
         stage_id = request.data.get("stage_id")
 
         try:
-            stage = Stage.objects.get(pk=stage_id, template=session.template)
+            stage = Stage.objects.get(pk=stage_id, session=session)
         except Stage.DoesNotExist:
             return Response(
                 {"error": {"message": "Etapa no encontrada en esta sesión."}},
