@@ -115,14 +115,6 @@ export default function StudentDashboardPage() {
             <Card className="xl:col-span-2 border-border shadow-card">
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-base font-semibold">Tus Clases</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary text-xs gap-1"
-                  onClick={() => navigate('/join')}
-                >
-                  Unirse a una Sala <ArrowRight className="w-3 h-3" />
-                </Button>
               </CardHeader>
               <Separator />
               <CardContent className="p-0">
@@ -203,7 +195,7 @@ export default function StudentDashboardPage() {
                     className="w-full sidebar-gradient border-0 text-white gap-2 h-10"
                     onClick={() => navigate('/join')}
                   >
-                    Ir a /join
+                    Ingresar código de sala
                   </Button>
                 </CardContent>
               </Card>
