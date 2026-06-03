@@ -18,13 +18,6 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; dot?: st
   PAUSED:    { label: 'Pausada',    className: 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30' },
 };
 
-const MOCK: LiveSession[] = [
-  { id: '1', title: 'Álgebra Lineal — Vectores', state: 'LIVE', join_code: 'VEC001', instructor: 'yo', participant_count: 28, created_at: new Date().toISOString() },
-  { id: '2', title: 'Física Cuántica: Intro', state: 'SCHEDULED', join_code: 'FIS002', instructor: 'yo', participant_count: 0, created_at: new Date().toISOString() },
-  { id: '3', title: 'POO con Python', state: 'ENDED', join_code: 'POO003', instructor: 'yo', participant_count: 35, created_at: new Date(Date.now() - 86400000).toISOString(), duration_seconds: 3720 },
-  { id: '4', title: 'Cálculo Diferencial', state: 'ENDED', join_code: 'CAL004', instructor: 'yo', participant_count: 22, created_at: new Date(Date.now() - 172800000).toISOString(), duration_seconds: 2700 },
-];
-
 function formatDuration(seconds?: number) {
   if (!seconds) return '—';
   const m = Math.floor(seconds / 60);
@@ -38,12 +31,30 @@ export default function SessionsListPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [sessions, setSessions] = useState<LiveSession[]>(MOCK);
+  const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [search, setSearch] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    sessionsService.list().then(setSessions).catch(() => setSessions(MOCK));
+    let active = true;
+    setLoading(true);
+    setError(false);
+    sessionsService
+      .list()
+      .then(data => {
+        if (active) setSessions(data);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = async (e: React.MouseEvent, session: LiveSession) => {
@@ -105,7 +116,22 @@ export default function SessionsListPage() {
             <span />
           </div>
           <CardContent className="p-0">
-            {filtered.length === 0 && (
+            {loading && (
+              <div className="py-16 text-center text-muted-foreground">
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-50" />
+                <p>Cargando sesiones...</p>
+              </div>
+            )}
+            {!loading && error && (
+              <div className="py-16 text-center text-muted-foreground">
+                <PlayCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p>No se pudieron cargar las sesiones</p>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.reload()}>
+                  Reintentar
+                </Button>
+              </div>
+            )}
+            {!loading && !error && filtered.length === 0 && sessions.length > 0 && (
               <div className="py-16 text-center text-muted-foreground">
                 <PlayCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p>No se encontraron sesiones</p>
@@ -113,7 +139,7 @@ export default function SessionsListPage() {
             )}
             <div className="divide-y divide-border">
               {filtered.map((s, i) => {
-                const cfg = STATUS_CONFIG[s.state];
+                const cfg = STATUS_CONFIG[s.state] ?? STATUS_CONFIG.ENDED;
                 return (
                   <motion.div
                     key={s.id}
@@ -218,7 +244,7 @@ export default function SessionsListPage() {
           </CardContent>
         </Card>
 
-        {sessions.length === 0 && (
+        {!loading && !error && sessions.length === 0 && (
           <div className="text-center py-20">
             <div className="w-16 h-16 rounded-2xl card-gradient-blue flex items-center justify-center mx-auto mb-4 opacity-60">
               <PlayCircle className="w-8 h-8 text-white" />
