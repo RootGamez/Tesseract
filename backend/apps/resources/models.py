@@ -23,10 +23,14 @@ class Resource(BaseModel):
         CODE = "CODE", "Código fuente"
         OTHER = "OTHER", "Otro"
 
+    # Null when the resource belongs to a template stage (a reusable asset that is
+    # copied into the session when a class is started from the template).
     session = models.ForeignKey(
         "live_sessions.LiveSession",
         on_delete=models.CASCADE,
         related_name="resources",
+        null=True,
+        blank=True,
     )
     stage = models.ForeignKey(
         "live_sessions.Stage",
@@ -64,7 +68,8 @@ class Resource(BaseModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.name} ({self.resource_type}) — {self.session.title}"
+        owner = self.session.title if self.session else (self.stage.title if self.stage else "—")
+        return f"{self.name} ({self.resource_type}) — {owner}"
 
 
 class Snippet(BaseModel):

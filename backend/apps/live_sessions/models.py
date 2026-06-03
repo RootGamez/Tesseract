@@ -225,24 +225,60 @@ class LiveSession(BaseModel):
 
     def populate_stages_from_template(self):
         """
-        Copy the template's stages into this session as independent, editable copies.
-        Called once at creation so the live class is decoupled from the template:
-        editing scenes here never mutates the original template.
+        Copy the template's stages into this session as independent, editable copies,
+        including their pre-filled board state, config and uploaded files (resources).
+        Called once at creation so the live class is a full, decoupled snapshot of the
+        template: editing scenes here never mutates the original template.
         """
         if not self.template:
             return
-        Stage.objects.bulk_create([
-            Stage(
+
+        from django.db import transaction
+        from apps.resources.models import Resource
+        from apps.resources.storage import generate_presigned_url
+
+        def _dispatch_processing(resource_id, resource_type):
+            """Best-effort background processing, deferred until the tx commits."""
+            try:
+                if resource_type == "PRESENTATION":
+                    from apps.presentations.tasks import process_presentation_upload
+                    process_presentation_upload.delay(str(resource_id))
+                elif resource_type == "PDF":
+                    from apps.ai_copilot.tasks import generate_questions_from_resource
+                    generate_questions_from_resource.delay(str(resource_id))
+            except Exception:
+                pass
+
+        for template_stage in self.template.stages.order_by("order"):
+            session_stage = Stage.objects.create(
                 session=self,
-                title=stage.title,
-                stage_type=stage.stage_type,
-                order=stage.order,
-                duration_estimated_minutes=stage.duration_estimated_minutes,
-                config=stage.config,
-                initial_board_state=stage.initial_board_state,
+                title=template_stage.title,
+                stage_type=template_stage.stage_type,
+                order=template_stage.order,
+                duration_estimated_minutes=template_stage.duration_estimated_minutes,
+                config=template_stage.config,
+                initial_board_state=template_stage.initial_board_state,
             )
-            for stage in self.template.stages.order_by("order")
-        ])
+
+            # Copy each uploaded asset, reusing the stored object (same file_key).
+            for res in template_stage.resources.all():
+                new_res = Resource.objects.create(
+                    session=self,
+                    stage=session_stage,
+                    uploaded_by=res.uploaded_by,
+                    name=res.name,
+                    resource_type=res.resource_type,
+                    file_key=res.file_key,
+                    size_bytes=res.size_bytes,
+                    content_type=res.content_type,
+                    presigned_url=generate_presigned_url(res.file_key),
+                    is_uploaded=True,
+                    is_dry_run_temp=self.is_dry_run,
+                )
+                # Re-run session-scoped processing for the copied asset once committed.
+                transaction.on_commit(
+                    lambda rid=new_res.pk, rtype=new_res.resource_type: _dispatch_processing(rid, rtype)
+                )
 
     @property
     def is_live(self):

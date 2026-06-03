@@ -168,6 +168,36 @@ class ClassTemplateViewSet(StageManagementMixin, ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        # Use the write serializer for input, but return the full read
+        # representation (incl. id, owner, stages) so the client can navigate
+        # to the new template immediately.
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        response_serializer = ClassTemplateSerializer(
+            serializer.instance, context=self.get_serializer_context()
+        )
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def update(self, request, *args, **kwargs):
+        # Same rationale: respond with the full read representation.
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, "_prefetched_objects_cache", None):
+            # Invalidate prefetch cache so the read serializer reflects fresh data.
+            instance._prefetched_objects_cache = {}
+
+        response_serializer = ClassTemplateSerializer(
+            serializer.instance, context=self.get_serializer_context()
+        )
+        return Response(response_serializer.data)
+
     @action(detail=True, methods=["post"], url_path="clone")
     def clone(self, request, pk=None):
         """POST /api/v1/sessions/templates/<pk>/clone/ — Duplicate a template."""

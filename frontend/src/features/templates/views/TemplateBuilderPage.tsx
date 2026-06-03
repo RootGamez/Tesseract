@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -24,8 +24,9 @@ import { quizService } from '@/shared/services/quizService';
 import apiClient from '@/shared/services/apiClient';
 
 // Builder stage components
-import BoardWrapper from '@/features/board/components/BoardWrapper';
+import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import PDFStage from '@/features/presentations/components/PDFStage';
+import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
   BOARD: Zap,
@@ -67,9 +68,11 @@ export default function TemplateBuilderPage() {
   const [isStagesDrawerOpen, setIsStagesDrawerOpen] = useState(false);
   const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
 
-  // PDF Local Files dictionary (stageId -> File)
-  const [localFiles, setLocalFiles] = useState<Record<string, File>>({});
+  // PDF preview URLs per stage (object URLs from local uploads or downloaded template assets)
   const [localFileUrls, setLocalFileUrls] = useState<Record<string, string>>({});
+  // Template files already persisted on the server (stageId is present on each resource)
+  const [templateFiles, setTemplateFiles] = useState<any[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   // Quiz libraries
   const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
@@ -95,6 +98,14 @@ export default function TemplateBuilderPage() {
 
         const quizList = await quizService.listSavedQuizzes();
         setSavedQuizzes(quizList);
+
+        // Load files already persisted on this template (so previews work on reopen).
+        try {
+          const files = await templatesService.listFiles(id);
+          setTemplateFiles(files);
+        } catch {
+          setTemplateFiles([]);
+        }
       } catch (err) {
         toast({
           title: 'Error al cargar plantilla',
@@ -110,12 +121,37 @@ export default function TemplateBuilderPage() {
     initPage();
   }, [id]);
 
-  // Cleanup object URLs on unmount
+  // Keep a ref to the latest preview URLs so we can revoke them once, on unmount,
+  // without revoking still-in-use URLs whenever the map changes.
+  const fileUrlsRef = useRef<Record<string, string>>({});
+  useEffect(() => { fileUrlsRef.current = localFileUrls; }, [localFileUrls]);
   useEffect(() => {
     return () => {
-      Object.values(localFileUrls).forEach(url => URL.revokeObjectURL(url));
+      Object.values(fileUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
     };
-  }, [localFileUrls]);
+  }, []);
+
+  // Lazily download the persisted file for the active PDF/Presentation stage so it previews on reopen.
+  useEffect(() => {
+    if (!activeStage?.id) return;
+    if (activeStage.stage_type !== 'PDF' && activeStage.stage_type !== 'PRESENTATION') return;
+    if (localFileUrls[activeStage.id]) return; // already have a preview (just uploaded or downloaded)
+
+    const resource = templateFiles.find(
+      r => String(r.stage) === String(activeStage.id) && (r.resource_type === 'PDF' || r.resource_type === 'PRESENTATION')
+    );
+    if (!resource?.id) return;
+
+    let alive = true;
+    apiClient.get(`/api/v1/resources/${resource.id}/download/`, { responseType: 'blob' })
+      .then(dl => {
+        if (!alive) return;
+        const url = URL.createObjectURL(dl.data as Blob);
+        setLocalFileUrls(prev => (prev[activeStage.id!] ? prev : { ...prev, [activeStage.id!]: url }));
+      })
+      .catch(() => { /* preview is best-effort */ });
+    return () => { alive = false; };
+  }, [activeStageId, activeStage, templateFiles]);
 
   // Fetch Quiz details when active stage has a quiz
   useEffect(() => {
@@ -129,46 +165,82 @@ export default function TemplateBuilderPage() {
     }
   }, [activeStageId, activeStage]);
 
-  // Dispatch custom board event to whiteboard wrapper on activeStage changes
+  // BoardWrapper reads the active stage from the orchestrator store, so keep that
+  // store in sync with the builder's local selection. Without this the board never
+  // initializes and edits are never emitted/saved.
   useEffect(() => {
-    if (activeStage && activeStage.stage_type === 'BOARD') {
-      const boardState = activeStage.initial_board_state || { elements: [] };
-      const event = new CustomEvent('board-update', {
-        detail: {
-          stage_id: activeStage.id,
-          event: 'SCENE_INIT',
-          is_full_sync: true,
-          elements: (boardState as any).elements || [],
-          files: (boardState as any).files || {},
-        }
-      });
-      const timer = setTimeout(() => {
-        window.dispatchEvent(event);
-      }, 150);
-      return () => clearTimeout(timer);
-    }
+    useOrchestratorStore.getState().syncState({ activeStageId });
   }, [activeStageId]);
 
-  // Intercepts Excalidraw SCENE_UPDATE events and persists state locally (including files/images)
+  // Keep a ref to the latest stages so dispatchSceneInit never reads stale data.
+  const stagesRef = useRef<TemplateStage[]>([]);
+  useEffect(() => { stagesRef.current = stages; }, [stages]);
+
+  // Imperative handle to flush the full board scene before saving.
+  const boardRef = useRef<BoardWrapperHandle>(null);
+
+  // Feed a stage's saved board content into BoardWrapper (it listens for 'board-update').
+  const dispatchSceneInit = (stageId: string) => {
+    const stage = stagesRef.current.find(s => s.id === stageId);
+    if (!stage || stage.stage_type !== 'BOARD') return;
+    const boardState = (stage.initial_board_state || {}) as any;
+    window.dispatchEvent(new CustomEvent('board-update', {
+      detail: {
+        stage_id: stageId,
+        event: 'SCENE_INIT',
+        is_full_sync: true,
+        elements: boardState.elements || [],
+        files: boardState.files || {},
+      },
+    }));
+  };
+
+  // Fallback: re-send the scene shortly after switching to a board stage, in case
+  // BoardWrapper's REQUEST_BOARD_SYNC fired before its canvas was ready.
+  useEffect(() => {
+    if (activeStage?.stage_type !== 'BOARD' || !activeStage.id) return;
+    const stageId = activeStage.id;
+    const timer = setTimeout(() => dispatchSceneInit(stageId), 200);
+    return () => clearTimeout(timer);
+  }, [activeStageId, activeStage]);
+
+  // Handles BoardWrapper messages: persists edits (SCENE_UPDATE) and answers sync
+  // requests (REQUEST_BOARD_SYNC) with the stage's stored content.
   const handleBoardUpdate = (
     channel: 'sessions' | 'chat' | 'board' | 'gamification',
     event: string,
     payload: any
   ) => {
-    if (channel === 'board' && event === 'SCENE_UPDATE' && activeStageId) {
-      const { elements, appState, files } = payload;
+    if (channel !== 'board') return;
+
+    if (event === 'REQUEST_BOARD_SYNC') {
+      // Defer a tick so BoardWrapper's 'board-update' listener is registered.
+      const sid = payload?.stage_id || activeStageId;
+      setTimeout(() => dispatchSceneInit(sid), 0);
+      return;
+    }
+
+    if (event === 'SCENE_UPDATE' && activeStageId) {
+      const { elements = [], appState, files } = payload;
+      // onChange emits only the changed elements (a delta), so merge them by id into
+      // the stage's accumulated scene instead of overwriting it (mirrors the backend).
       setStages(current => current.map(s => {
-        if (s.id === activeStageId) {
-          return {
-            ...s,
-            initial_board_state: {
-              elements,
-              appState,
-              ...(files ? { files } : {}),
-            }
-          };
+        if (s.id !== activeStageId) return s;
+        const prevState = (s.initial_board_state || {}) as any;
+        const byId = new Map<string, any>((prevState.elements || []).map((el: any) => [el.id, el]));
+        for (const el of elements) {
+          const existing = byId.get(el.id);
+          if (!existing || (el.version ?? 0) >= (existing.version ?? 0)) byId.set(el.id, el);
         }
-        return s;
+        const mergedFiles = files ? { ...(prevState.files || {}), ...files } : prevState.files;
+        return {
+          ...s,
+          initial_board_state: {
+            elements: Array.from(byId.values()),
+            appState: appState ?? prevState.appState,
+            ...(mergedFiles ? { files: mergedFiles } : {}),
+          },
+        };
       }));
     }
   };
@@ -183,7 +255,13 @@ export default function TemplateBuilderPage() {
   };
 
   const saveBoardState = async (stageId: string) => {
-    const stageToSave = stages.find(s => s.id === stageId);
+    // Push the full current scene (cancels any pending throttle) so the very last
+    // strokes are merged into local state before we persist.
+    try {
+      await boardRef.current?.flushSnapshot();
+    } catch { /* ignore */ }
+
+    const stageToSave = stagesRef.current.find(s => s.id === stageId) || stages.find(s => s.id === stageId);
     if (stageToSave && stageToSave.stage_type === 'BOARD' && stageToSave.initial_board_state) {
       try {
         await templatesService.updateStage(id!, stageId, {
@@ -232,11 +310,17 @@ export default function TemplateBuilderPage() {
 
       const newStage = await templatesService.addStage(id, payload);
 
-      // Keep the chosen file locally for in-builder preview and later upload when a class is started.
+      // Persist the chosen file on the template stage + keep an object URL for instant preview.
       if (newStage.id && newStageFile && (newStageType === 'PDF' || newStageType === 'PRESENTATION')) {
+        const resourceType = newStageFile.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'PRESENTATION';
         const url = URL.createObjectURL(newStageFile);
-        setLocalFiles(prev => ({ ...prev, [newStage.id!]: newStageFile }));
         setLocalFileUrls(prev => ({ ...prev, [newStage.id!]: url }));
+        try {
+          const resource = await templatesService.uploadFile(id, newStage.id, newStageFile, resourceType);
+          setTemplateFiles(prev => [...prev, resource]);
+        } catch {
+          toast({ title: 'Aviso', description: 'La escena se creó pero el archivo no se pudo guardar en el servidor.', variant: 'destructive' });
+        }
       }
 
       setStages(prev => [...prev, newStage]);
@@ -288,20 +372,25 @@ export default function TemplateBuilderPage() {
     }
   };
 
-  // Handle PDF file uploads locally (in-center editing of an existing stage)
-  const handlePdfUpload = (file: File) => {
-    if (!activeStageId) return;
+  // Upload a PDF/PPTX for the active stage (in-center editing) and persist it on the template.
+  const handlePdfUpload = async (file: File) => {
+    if (!activeStageId || !id) return;
+    const resourceType = file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'PRESENTATION';
     const url = URL.createObjectURL(file);
-
-    setLocalFiles(prev => ({ ...prev, [activeStageId]: file }));
     setLocalFileUrls(prev => ({ ...prev, [activeStageId]: url }));
+    setStages(current => current.map(s => (
+      s.id === activeStageId ? { ...s, config: { ...s.config, filename: file.name } } : s
+    )));
 
-    setStages(current => current.map(s => {
-      if (s.id === activeStageId) {
-        return { ...s, config: { ...s.config, filename: file.name } };
-      }
-      return s;
-    }));
+    setUploadingFile(true);
+    try {
+      const resource = await templatesService.uploadFile(id, activeStageId, file, resourceType);
+      setTemplateFiles(prev => [...prev.filter(r => String(r.stage) !== String(activeStageId)), resource]);
+    } catch {
+      toast({ title: 'Error', description: 'No se pudo guardar el archivo en el servidor.', variant: 'destructive' });
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
   // Associate (or clear) Quiz ID on active stage config
@@ -372,29 +461,12 @@ export default function TemplateBuilderPage() {
       await persistTemplateChanges();
 
       toast({ title: 'Creando clase...', description: 'Inicializando sesión basándose en la plantilla...' });
+      // The backend copies the template's stages, board state and uploaded files
+      // into the new session, so there's nothing to re-upload here.
       const session = await sessionsService.create({
         title: title.trim(),
         template_id: id,
       });
-
-      const stagedStageIds = Object.keys(localFiles);
-      if (stagedStageIds.length > 0) {
-        toast({ title: 'Sincronizando archivos', description: 'Cargando documentos pre-configurados a la clase...' });
-        await Promise.allSettled(
-          stagedStageIds.map(stageId => {
-            const file = localFiles[stageId];
-            const ext = file.name.split('.').pop()?.toLowerCase();
-            const type = ext === 'pdf' ? 'PDF' : 'PRESENTATION';
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('resource_type', type);
-            formData.append('stage_id', stageId);
-            return apiClient.post(`/api/v1/resources/sessions/${session.id}/upload/`, formData, {
-              headers: { 'Content-Type': 'multipart/form-data' },
-            });
-          })
-        );
-      }
 
       toast({ title: '¡Clase inicializada!', description: 'Redirigiendo al panel del instructor...' });
       navigate(`/session/${session.id}/instructor`);
@@ -631,7 +703,7 @@ export default function TemplateBuilderPage() {
               </motion.div>
             ) : activeStage.stage_type === 'BOARD' ? (
               <div className="w-full h-full relative" key={activeStage.id}>
-                <BoardWrapper role="instructor" sendMessage={handleBoardUpdate} />
+                <BoardWrapper ref={boardRef} role="instructor" sendMessage={handleBoardUpdate} />
                 <div className="absolute top-3 right-3 bg-card/90 text-muted-foreground text-[10px] py-1 px-2.5 rounded-full border border-border pointer-events-none select-none flex items-center gap-1.5 backdrop-blur">
                   <CheckCircle2 className="w-3 h-3 text-green-500" />
                   Los trazos se guardan automáticamente
@@ -652,12 +724,17 @@ export default function TemplateBuilderPage() {
                     <p className="text-xs text-muted-foreground mb-4">
                       Sube el archivo PDF para previsualizarlo en el constructor y tenerlo listo para la clase.
                     </p>
-                    <label className="inline-flex items-center justify-center cursor-pointer sidebar-gradient text-white text-xs font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">
-                      <span>Elegir Archivo</span>
+                    <label className={cn(
+                      'inline-flex items-center justify-center gap-2 cursor-pointer sidebar-gradient text-white text-xs font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity',
+                      uploadingFile && 'opacity-60 pointer-events-none'
+                    )}>
+                      {uploadingFile && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{uploadingFile ? 'Subiendo...' : 'Elegir Archivo'}</span>
                       <input
                         type="file"
                         accept=".pdf"
                         className="hidden"
+                        disabled={uploadingFile}
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) handlePdfUpload(file);
