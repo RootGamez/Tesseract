@@ -4,6 +4,7 @@ import QuizEditor from '../components/QuizEditor';
 import QuizSimulator from '../components/QuizSimulator';
 import { Topbar } from '@/shared/components/layout/Topbar';
 import { Button } from '@/shared/components/ui/button';
+import { useConfirm } from '@/shared/components/ui/confirm-dialog';
 import { Trophy, Plus, Edit, Trash2, Play, BookOpen } from 'lucide-react';
 
 export default function QuizBuilderPage({ sessionId, stageId }: { sessionId?: string; stageId?: string }) {
@@ -15,8 +16,9 @@ export default function QuizBuilderPage({ sessionId, stageId }: { sessionId?: st
     loadSavedQuizzes, 
     selectQuizForEditing, 
     createBlankQuiz, 
-    deleteSavedQuiz 
+    deleteSavedQuiz
   } = useQuizStore();
+  const confirm = useConfirm();
 
   const isEmbedded = !!sessionId;
 
@@ -106,10 +108,14 @@ export default function QuizBuilderPage({ sessionId, stageId }: { sessionId?: st
                         variant="ghost" 
                         size="sm" 
                         className="text-xs h-9 w-9 p-0 hover:bg-red-500/10 hover:text-red-500" 
-                        onClick={() => {
-                          if (window.confirm(`¿Estás seguro de que deseas eliminar "${quiz.title}"?`)) {
-                            deleteSavedQuiz(quiz.id);
-                          }
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: 'Eliminar quiz',
+                            description: `¿Seguro que deseas eliminar "${quiz.title}"?`,
+                            confirmText: 'Eliminar',
+                            tone: 'destructive',
+                          });
+                          if (ok) deleteSavedQuiz(quiz.id);
                         }}
                       >
                         <Trash2 className="w-4 h-4" />

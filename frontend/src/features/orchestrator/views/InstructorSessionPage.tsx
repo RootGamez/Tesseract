@@ -33,6 +33,7 @@ import { useWebSocket } from '@/shared/hooks/useWebSocket';
 import { sessionsService } from '@/shared/services/sessionsService';
 import apiClient from '@/shared/services/apiClient';
 import { useToast } from '@/shared/hooks/use-toast';
+import { useConfirm } from '@/shared/components/ui/confirm-dialog';
 import { cn } from '@/shared/lib/utils';
 
 // Features — Branch 'pdf' (Presentaciones y documentos)
@@ -61,6 +62,7 @@ export default function InstructorSessionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { stages, activeStageId, participants, sessionInfo } = useOrchestratorStore();
   const { isConnected, isReconnecting, sendMessage } = useWebSocket(id ?? null, 'instructor');
   
@@ -328,6 +330,26 @@ export default function InstructorSessionPage() {
     }
   };
 
+  const handleDeleteStage = async (stage: { id: string; title: string }, isActive: boolean) => {
+    const ok = await confirm({
+      title: 'Eliminar escena',
+      description: `¿Seguro que deseas eliminar la escena "${stage.title}"?`,
+      confirmText: 'Eliminar',
+      tone: 'destructive',
+    });
+    if (!ok || !id) return;
+    try {
+      await sessionsService.deleteStage(id, stage.id);
+      const remaining = stages.filter(s => s.id !== stage.id);
+      if (isActive && remaining.length > 0) {
+        await sessionsService.changeStage(id, remaining[0].id);
+      }
+      await fetchSession();
+    } catch (err) {
+      console.error('Failed to delete stage:', err);
+    }
+  };
+
   const handleAwardPoints = () => {
     if (!selectedParticipant || !points) return;
     sendMessage('gamification', 'POINTS_AWARDED', { participant_id: selectedParticipant, points: Number(points), action_label: 'Participación' });
@@ -510,21 +532,7 @@ export default function InstructorSessionPage() {
                       </div>
                     </div>
                     <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (confirm(`¿Eliminar la escena "${stage.title}"?`)) {
-                          try {
-                            await sessionsService.deleteStage(id!, stage.id);
-                            const remaining = stages.filter(s => s.id !== stage.id);
-                            if (isActive && remaining.length > 0) {
-                              await sessionsService.changeStage(id!, remaining[0].id);
-                            }
-                            await fetchSession();
-                          } catch (err) {
-                            console.error('Failed to delete stage:', err);
-                          }
-                        }
-                      }}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteStage(stage, isActive); }}
                       className="opacity-0 group-hover:opacity-100 hover:text-destructive p-1 rounded transition-opacity shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
@@ -606,21 +614,7 @@ export default function InstructorSessionPage() {
                         </div>
                       </div>
                       <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (confirm(`¿Eliminar la escena "${stage.title}"?`)) {
-                            try {
-                              await sessionsService.deleteStage(id!, stage.id);
-                              const remaining = stages.filter(s => s.id !== stage.id);
-                              if (isActive && remaining.length > 0) {
-                                await sessionsService.changeStage(id!, remaining[0].id);
-                              }
-                              await fetchSession();
-                            } catch (err) {
-                              console.error('Failed to delete stage:', err);
-                            }
-                          }
-                        }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteStage(stage, isActive); }}
                         className="hover:text-destructive p-1 rounded shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />

@@ -34,6 +34,9 @@ export const sessionsService = {
     const { data } = await apiClient.post<LiveSession>('/api/v1/sessions/live/', payload);
     return data;
   },
+  async delete(id: string): Promise<void> {
+    await apiClient.delete(`/api/v1/sessions/live/${id}/`);
+  },
   async start(id: string): Promise<LiveSession> {
     const { data } = await apiClient.post<LiveSession>(`/api/v1/sessions/live/${id}/transition/`, { action: 'start' });
     return data;

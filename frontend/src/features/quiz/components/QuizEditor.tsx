@@ -22,6 +22,7 @@ import { QuestionCard } from './QuestionCard';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
+import { useConfirm } from '@/shared/components/ui/confirm-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Zod validation schema
@@ -50,6 +51,7 @@ type QuizFormValues = z.infer<typeof quizSchema>;
 
 export default function QuizEditor({ sessionId, stageId }: { sessionId?: string; stageId?: string }) {
   const { quizTitle, questions, isSaving, lastSaved, setView, updateQuizState, saveQuizDraft, loadSessionQuestions, resetQuiz } = useQuizStore();
+  const confirm = useConfirm();
 
   // Initialize React Hook Form
   const {
@@ -219,16 +221,21 @@ export default function QuizEditor({ sessionId, stageId }: { sessionId?: string;
   };
 
   // Handle reset quiz draft
-  const handleReset = () => {
-    if (window.confirm('¿Estás seguro de que deseas restablecer el borrador del quiz? Esto borrará el contenido actual.')) {
-      resetQuiz();
-      const freshStore = useQuizStore.getState();
-      reset({
-        quizTitle: freshStore.quizTitle,
-        questions: freshStore.questions,
-      });
-      isInitializedRef.current = false;
-    }
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: 'Restablecer borrador',
+      description: '¿Seguro que deseas restablecer el borrador del quiz? Esto borrará el contenido actual.',
+      confirmText: 'Restablecer',
+      tone: 'destructive',
+    });
+    if (!ok) return;
+    resetQuiz();
+    const freshStore = useQuizStore.getState();
+    reset({
+      quizTitle: freshStore.quizTitle,
+      questions: freshStore.questions,
+    });
+    isInitializedRef.current = false;
   };
 
   return (

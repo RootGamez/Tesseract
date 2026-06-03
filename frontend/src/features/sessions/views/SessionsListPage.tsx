@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, PlayCircle, Users, Clock, ChevronRight, Search, Filter } from 'lucide-react';
+import { Plus, PlayCircle, Users, Clock, ChevronRight, Search, Filter, Trash2, Loader2 } from 'lucide-react';
 import { Topbar } from '@/shared/components/layout/Topbar';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { Input } from '@/shared/components/ui/input';
+import { useToast } from '@/shared/hooks/use-toast';
+import { useConfirm } from '@/shared/components/ui/confirm-dialog';
 import { sessionsService, type LiveSession } from '@/shared/services/sessionsService';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string; dot?: string }> = {
@@ -34,12 +36,41 @@ function formatDate(iso: string) {
 
 export default function SessionsListPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const confirm = useConfirm();
   const [sessions, setSessions] = useState<LiveSession[]>(MOCK);
   const [search, setSearch] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     sessionsService.list().then(setSessions).catch(() => setSessions(MOCK));
   }, []);
+
+  const handleDelete = async (e: React.MouseEvent, session: LiveSession) => {
+    e.stopPropagation();
+    const ok = await confirm({
+      title: 'Eliminar clase',
+      description: `¿Seguro que deseas eliminar "${session.title}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      tone: 'destructive',
+    });
+    if (!ok) return;
+
+    setDeletingId(session.id);
+    try {
+      await sessionsService.delete(session.id);
+      setSessions(current => current.filter(s => s.id !== session.id));
+      toast({ title: 'Clase eliminada', description: 'La sesión fue borrada correctamente.' });
+    } catch {
+      toast({
+        title: 'No se pudo eliminar',
+        description: 'Revisa tu conexión o tus permisos e intenta nuevamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filtered = sessions.filter(s => s.title.toLowerCase().includes(search.toLowerCase()));
 
@@ -65,7 +96,7 @@ export default function SessionsListPage() {
 
         <Card className="border-border shadow-card">
           {/* Header row - desktop only */}
-          <div className="hidden md:grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-3 bg-muted/50 rounded-t-lg border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <div className="hidden md:grid grid-cols-[1fr_120px_100px_100px_80px_84px] gap-4 px-5 py-3 bg-muted/50 rounded-t-lg border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             <span>Sesión</span>
             <span>Código</span>
             <span>Estudiantes</span>
@@ -105,7 +136,7 @@ export default function SessionsListPage() {
                     }}
                   >
                     {/* Desktop View */}
-                    <div className="hidden md:grid grid-cols-[1fr_120px_100px_100px_80px_48px] gap-4 px-5 py-4 items-center hover:bg-muted/40 cursor-pointer transition-colors">
+                    <div className="hidden md:grid grid-cols-[1fr_120px_100px_100px_80px_84px] gap-4 px-5 py-4 items-center hover:bg-muted/40 cursor-pointer transition-colors">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-lg card-gradient-blue flex items-center justify-center shrink-0">
                           <PlayCircle className="w-4 h-4 text-white" />
@@ -126,7 +157,19 @@ export default function SessionsListPage() {
                         {cfg.dot && <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot} mr-1.5 animate-pulse`} />}
                         {cfg.label}
                       </Badge>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground justify-self-end" />
+                      <div className="flex items-center gap-1 justify-self-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => handleDelete(e, s)}
+                          disabled={deletingId === s.id}
+                          aria-label="Eliminar clase"
+                        >
+                          {deletingId === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </Button>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
                     </div>
 
                     {/* Mobile View */}
@@ -141,10 +184,22 @@ export default function SessionsListPage() {
                             <p className="text-[11px] text-muted-foreground mt-0.5">{formatDate(s.created_at)}</p>
                           </div>
                         </div>
-                        <Badge variant="outline" className={`text-[10px] px-2 py-0.5 shrink-0 ${cfg.className}`}>
-                          {cfg.dot && <span className={`inline-block w-1 h-1 rounded-full ${cfg.dot} mr-1 animate-pulse`} />}
-                          {cfg.label}
-                        </Badge>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${cfg.className}`}>
+                            {cfg.dot && <span className={`inline-block w-1 h-1 rounded-full ${cfg.dot} mr-1 animate-pulse`} />}
+                            {cfg.label}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => handleDelete(e, s)}
+                            disabled={deletingId === s.id}
+                            aria-label="Eliminar clase"
+                          >
+                            {deletingId === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg">

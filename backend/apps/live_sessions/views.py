@@ -237,7 +237,7 @@ class LiveSessionViewSet(StageManagementMixin, ModelViewSet):
 
     def get_permissions(self):
         if self.action in (
-            "create", "transition", "change_stage",
+            "create", "destroy", "update", "partial_update", "transition", "change_stage",
             "add_stage", "update_stage", "delete_stage", "reorder_stages",
         ):
             return [IsInstructor()]

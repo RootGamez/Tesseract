@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { useToast } from '@/shared/hooks/use-toast';
+import { useConfirm } from '@/shared/components/ui/confirm-dialog';
 import { sessionsService } from '@/shared/services/sessionsService';
 import { templatesService, type ClassTemplate } from '@/shared/services/templatesService';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
@@ -26,6 +27,7 @@ function getIcon(index: number) {
 export default function TemplatesPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const [templates, setTemplates] = useState<ClassTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +95,12 @@ export default function TemplatesPage() {
   };
 
   const handleDelete = async (template: ClassTemplate) => {
-    const confirmed = window.confirm(`¿Eliminar la plantilla "${template.title}"? Esta acción no se puede deshacer.`);
+    const confirmed = await confirm({
+      title: 'Eliminar plantilla',
+      description: `¿Seguro que deseas eliminar "${template.title}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      tone: 'destructive',
+    });
     if (!confirmed) return;
 
     setBusyId(template.id);

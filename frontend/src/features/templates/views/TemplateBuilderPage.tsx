@@ -13,6 +13,7 @@ import { Separator } from '@/shared/components/ui/separator';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import { Sheet, SheetContent } from '@/shared/components/ui/sheet';
 import { useToast } from '@/shared/hooks/use-toast';
+import { useConfirm } from '@/shared/components/ui/confirm-dialog';
 import { cn } from '@/shared/lib/utils';
 import { Label } from '@/shared/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
@@ -41,6 +42,7 @@ export default function TemplateBuilderPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -337,7 +339,13 @@ export default function TemplateBuilderPage() {
   // Delete stage
   const handleDeleteStage = async (stage: TemplateStage) => {
     if (!stage.id || !id) return;
-    if (!window.confirm(`¿Seguro que deseas eliminar la escena "${stage.title}"?`)) return;
+    const ok = await confirm({
+      title: 'Eliminar escena',
+      description: `¿Seguro que deseas eliminar la escena "${stage.title}"?`,
+      confirmText: 'Eliminar',
+      tone: 'destructive',
+    });
+    if (!ok) return;
 
     try {
       await templatesService.deleteStage(id, stage.id);
