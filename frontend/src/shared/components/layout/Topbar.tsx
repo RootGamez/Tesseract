@@ -17,24 +17,25 @@ export function Topbar({ title, subtitle, showNewSession }: TopbarProps) {
   const { theme, setTheme } = useTheme();
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const { setMobileOpen } = useSidebarStore();
+  const { open } = useSidebarStore();
   const initials = user?.display_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U';
 
   return (
-    <header className="h-16 border-b border-border bg-card/80 backdrop-blur-sm flex items-center justify-between px-6 shrink-0 sticky top-0 z-30">
-      <div className="flex items-center gap-3">
-        {/* Mobile menu toggle */}
+    <header className="h-16 border-b border-border bg-card/80 backdrop-blur-sm flex items-center justify-between px-4 sm:px-6 shrink-0 sticky top-0 z-30">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        {/* Sidebar menu toggle (always visible) */}
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 text-muted-foreground hover:text-foreground md:hidden shrink-0"
-          onClick={() => setMobileOpen(true)}
+          className="h-9 w-9 text-muted-foreground hover:text-foreground shrink-0"
+          onClick={open}
+          aria-label="Abrir menú"
         >
           <Menu className="w-5 h-5" />
         </Button>
-        <div>
-          <h1 className="text-xl font-bold text-foreground leading-none">{title}</h1>
-          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-xl font-bold text-foreground leading-none truncate">{title}</h1>
+          {subtitle && <p className="text-xs text-muted-foreground mt-0.5 truncate hidden sm:block">{subtitle}</p>}
         </div>
       </div>
 

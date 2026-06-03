@@ -1,29 +1,19 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 interface SidebarState {
-  isCollapsed: boolean;
-  isMobileOpen: boolean;
-  toggleCollapsed: () => void;
-  setCollapsed: (collapsed: boolean) => void;
-  toggleMobileOpen: () => void;
-  setMobileOpen: (open: boolean) => void;
+  /** Whether the main navigation sidebar overlay is open. */
+  isOpen: boolean;
+  toggle: () => void;
+  open: () => void;
+  close: () => void;
+  setOpen: (open: boolean) => void;
 }
 
-export const useSidebarStore = create<SidebarState>()(
-  persist(
-    (set) => ({
-      isCollapsed: false,
-      isMobileOpen: false,
-      toggleCollapsed: () => set((state) => ({ isCollapsed: !state.isCollapsed })),
-      setCollapsed: (isCollapsed) => set({ isCollapsed }),
-      toggleMobileOpen: () => set((state) => ({ isMobileOpen: !state.isMobileOpen })),
-      setMobileOpen: (isMobileOpen) => set({ isMobileOpen }),
-    }),
-    {
-      name: 'tesseract-sidebar',
-      // only persist isCollapsed, we don't need to persist isMobileOpen
-      partialize: (state) => ({ isCollapsed: state.isCollapsed }),
-    }
-  )
-);
+export const useSidebarStore = create<SidebarState>()((set) => ({
+  // The sidebar is tucked away by default and opens as an overlay on demand.
+  isOpen: false,
+  toggle: () => set((state) => ({ isOpen: !state.isOpen })),
+  open: () => set({ isOpen: true }),
+  close: () => set({ isOpen: false }),
+  setOpen: (isOpen) => set({ isOpen }),
+}));

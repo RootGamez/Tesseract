@@ -1,6 +1,7 @@
+import { useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { Toaster } from '@/shared/components/ui/toaster';
-import { Sheet, SheetContent } from '@/shared/components/ui/sheet';
 import { useSidebarStore } from '@/shared/hooks/useSidebarStore';
 
 interface AppShellProps {
@@ -8,29 +9,52 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const { isMobileOpen, setMobileOpen } = useSidebarStore();
+  const { isOpen, close } = useSidebarStore();
+
+  // Close on Escape for accessibility.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, close]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Desktop Sidebar */}
-      <div className="hidden md:block h-full">
-        <Sidebar />
+    <div className="relative h-screen overflow-hidden bg-background">
+      {/* Content takes the full width — the sidebar floats above it, never pushes it. */}
+      <div className="h-full flex flex-col overflow-hidden">
+        <main className="flex-1 overflow-y-auto scrollbar-thin">{children}</main>
       </div>
 
-      {/* Mobile Sidebar (Drawer) */}
-      <Sheet open={isMobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="p-0 w-[240px] border-r-0 bg-transparent">
-          <div className="h-full w-full">
-            <Sidebar forceExpanded />
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Overlay sidebar (all screen sizes) */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div
+              key="sidebar-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={close}
+              className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+            />
+            <motion.div
+              key="sidebar-panel"
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ type: 'tween', duration: 0.25, ease: 'easeInOut' }}
+              className="fixed inset-y-0 left-0 z-50 w-[260px] max-w-[85vw] shadow-2xl"
+            >
+              <Sidebar />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <main className="flex-1 overflow-y-auto scrollbar-thin">
-          {children}
-        </main>
-      </div>
       <Toaster />
     </div>
   );

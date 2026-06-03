@@ -1,8 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, BookOpen, PlayCircle, BarChart3, Users,
-  Settings, LogOut, Zap, ChevronLeft, ChevronRight, Gamepad2
+  Settings, LogOut, Zap, Gamepad2, X
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -24,19 +23,14 @@ const STUDENT_NAV = [
   { to: '/student-dashboard', icon: LayoutDashboard, label: 'Mi Dashboard' },
 ];
 
-interface SidebarProps {
-  forceExpanded?: boolean;
-}
-
-export function Sidebar({ forceExpanded = false }: SidebarProps) {
+export function Sidebar() {
   const { user, clearUser } = useAuthStore();
   const navigate = useNavigate();
-  const { isCollapsed, toggleCollapsed, setMobileOpen } = useSidebarStore();
-  const collapsed = forceExpanded ? false : isCollapsed;
+  const { close } = useSidebarStore();
   const nav = user?.role === 'STUDENT' ? STUDENT_NAV : INSTRUCTOR_NAV;
 
   const handleLogout = async () => {
-    setMobileOpen(false);
+    close();
     await authService.logout();
     clearUser();
     navigate('/login');
@@ -47,62 +41,37 @@ export function Sidebar({ forceExpanded = false }: SidebarProps) {
     : 'U';
 
   return (
-    <motion.aside
-      animate={{ width: collapsed ? 72 : 240 }}
-      transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="sidebar-gradient shadow-sidebar flex flex-col h-full shrink-0 overflow-hidden relative"
-    >
-      {/* Collapse toggle */}
-      {!forceExpanded && (
-        <Button variant="ghost" size="icon" className="absolute -right-3 top-4 z-10 hidden md:flex" onClick={toggleCollapsed}>
-          {collapsed
-            ? <ChevronRight className="w-3 h-3 text-white" />
-            : <ChevronLeft className="w-3 h-3 text-white" />}
-        </Button>
-      )}
-
-      {/* Logo */}
-      <div className="p-5 flex items-center gap-3 shrink-0">
-        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
-          <Zap className="w-5 h-5 text-white" />
+    <aside className="sidebar-gradient shadow-sidebar flex flex-col h-full w-full overflow-hidden relative">
+      {/* Header: logo + close */}
+      <div className="p-5 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+            <Zap className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-bold text-white text-lg whitespace-nowrap">Tesseract</span>
         </div>
-        <AnimatePresence>
-          {!collapsed && (
-            <motion.span
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 'auto' }}
-              exit={{ opacity: 0, width: 0 }}
-              className="font-bold text-white text-lg whitespace-nowrap overflow-hidden"
-            >
-              Tesseract
-            </motion.span>
-          )}
-        </AnimatePresence>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10 shrink-0"
+          onClick={close}
+          aria-label="Cerrar menú"
+        >
+          <X className="w-5 h-5" />
+        </Button>
       </div>
 
       {/* User profile */}
-      <div className={cn(
-        'px-4 py-4 border-b border-white/10 flex items-center gap-3',
-        collapsed && 'justify-center'
-      )}>
+      <div className="px-4 py-4 border-b border-white/10 flex items-center gap-3">
         <Avatar className="h-9 w-9 shrink-0 border-2 border-white/30">
           <AvatarFallback className="bg-white/20 text-white text-xs font-bold">
             {initials}
           </AvatarFallback>
         </Avatar>
-        <AnimatePresence>
-          {!collapsed && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="overflow-hidden min-w-0"
-            >
-              <p className="text-white font-semibold text-sm truncate">{user?.display_name || 'Usuario'}</p>
-              <p className="text-white/50 text-xs">{user?.role === 'INSTRUCTOR' ? 'Instructor' : 'Estudiante'}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="overflow-hidden min-w-0">
+          <p className="text-white font-semibold text-sm truncate">{user?.display_name || 'Usuario'}</p>
+          <p className="text-white/50 text-xs">{user?.role === 'INSTRUCTOR' ? 'Instructor' : 'Estudiante'}</p>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -112,32 +81,18 @@ export function Sidebar({ forceExpanded = false }: SidebarProps) {
             key={to}
             to={to}
             end={to === '/dashboard' || to === '/student-dashboard' || to === '/join'}
-            onClick={() => setMobileOpen(false)}
+            onClick={close}
           >
             {({ isActive }) => (
               <div className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer group',
-                collapsed && 'justify-center',
                 isActive
                   ? 'bg-white/15 text-white'
                   : 'text-white/60 hover:bg-white/10 hover:text-white'
               )}>
                 <Icon className="w-5 h-5 shrink-0" />
-                <AnimatePresence>
-                  {!collapsed && (
-                    <motion.span
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="text-sm font-medium whitespace-nowrap"
-                    >
-                      {label}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-                {isActive && !collapsed && (
-                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />
-                )}
+                <span className="text-sm font-medium whitespace-nowrap">{label}</span>
+                {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
               </div>
             )}
           </NavLink>
@@ -146,41 +101,25 @@ export function Sidebar({ forceExpanded = false }: SidebarProps) {
 
       {/* Bottom actions */}
       <div className="p-3 border-t border-white/10 space-y-1">
-        <NavLink to="/settings" onClick={() => setMobileOpen(false)}>
+        <NavLink to="/settings" onClick={close}>
           {({ isActive }) => (
             <div className={cn(
               'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer',
-              collapsed && 'justify-center',
               isActive ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/10 hover:text-white'
             )}>
               <Settings className="w-5 h-5 shrink-0" />
-              <AnimatePresence>
-                {!collapsed && (
-                  <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
-                    Configuración
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              <span className="text-sm font-medium">Configuración</span>
             </div>
           )}
         </NavLink>
         <Button variant="ghost"
           onClick={handleLogout}
-          className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:bg-red-500/20 hover:text-red-300 transition-all',
-            collapsed && 'justify-center'
-          )}
+          className="w-full flex items-center justify-start gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:bg-red-500/20 hover:text-red-300 transition-all"
         >
           <LogOut className="w-5 h-5 shrink-0" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
-                Cerrar Sesión
-              </motion.span>
-            )}
-          </AnimatePresence>
+          <span className="text-sm font-medium">Cerrar Sesión</span>
         </Button>
       </div>
-    </motion.aside>
+    </aside>
   );
 }
