@@ -95,13 +95,22 @@ export const templatesService = {
     await apiClient.patch(`/api/v1/sessions/templates/${templateId}/stages/reorder/`, { stage_ids: stageIds });
   },
   // Persist an uploaded file (PDF/PPTX/document) as a reusable asset on a template stage.
-  async uploadFile(templateId: string, stageId: string, file: File, resourceType: 'PDF' | 'PRESENTATION' | 'DOCUMENT'): Promise<any> {
+  async uploadFile(
+    templateId: string,
+    stageId: string,
+    file: File,
+    resourceType: 'PDF' | 'PRESENTATION' | 'DOCUMENT',
+    onProgress?: (percent: number) => void,
+  ): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('resource_type', resourceType);
     formData.append('stage_id', stageId);
     const { data } = await apiClient.post(`/api/v1/resources/templates/${templateId}/upload/`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+      },
     });
     return data;
   },

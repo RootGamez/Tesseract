@@ -20,7 +20,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 // Services
 import { templatesService, type TemplateStage } from '@/shared/services/templatesService';
-import { resourceTypeForFile, acceptForStageType } from '@/shared/utils/resourceTypes';
+import { resourceTypeForFile } from '@/shared/utils/resourceTypes';
+import { FileUploadField } from '@/shared/components/ui/file-upload';
 import { sessionsService } from '@/shared/services/sessionsService';
 import { quizService } from '@/shared/services/quizService';
 import apiClient from '@/shared/services/apiClient';
@@ -76,6 +77,9 @@ export default function TemplateBuilderPage() {
   // Template files already persisted on the server (stageId is present on each resource)
   const [templateFiles, setTemplateFiles] = useState<any[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // File currently being uploaded for the active stage (drives the progress card).
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   // Quiz libraries
   const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
@@ -399,13 +403,17 @@ export default function TemplateBuilderPage() {
     )));
 
     setUploadingFile(true);
+    setUploadProgress(0);
+    setPendingFile(file);
     try {
-      const resource = await templatesService.uploadFile(id, activeStageId, file, resourceType);
+      const resource = await templatesService.uploadFile(id, activeStageId, file, resourceType, setUploadProgress);
       setTemplateFiles(prev => [...prev.filter(r => String(r.stage) !== String(activeStageId)), resource]);
     } catch {
       toast({ title: 'Error', description: 'No se pudo guardar el archivo en el servidor.', variant: 'destructive' });
     } finally {
       setUploadingFile(false);
+      setUploadProgress(null);
+      setPendingFile(null);
     }
   };
 
@@ -734,29 +742,15 @@ export default function TemplateBuilderPage() {
                     localFileUrl={localFileUrls[activeStage.id!]}
                   />
                 ) : (
-                  <div className="p-8 max-w-sm rounded-xl border border-dashed border-border text-center bg-card/40">
-                    <FolderOpen className="w-10 h-10 text-muted-foreground/60 mx-auto mb-4 animate-pulse" />
-                    <h3 className="font-medium text-sm text-foreground mb-1">Cargar Documento PDF</h3>
-                    <p className="text-xs text-muted-foreground mb-4">
-                      Sube un PDF, PPTX, documento de Word, hoja de cálculo o texto para tenerlo listo para la clase.
-                    </p>
-                    <label className={cn(
-                      'inline-flex items-center justify-center gap-2 cursor-pointer sidebar-gradient text-white text-xs font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity',
-                      uploadingFile && 'opacity-60 pointer-events-none'
-                    )}>
-                      {uploadingFile && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      <span>{uploadingFile ? 'Subiendo...' : 'Elegir Archivo'}</span>
-                      <input
-                        type="file"
-                        accept={acceptForStageType(activeStage.stage_type)}
-                        className="hidden"
-                        disabled={uploadingFile}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handlePdfUpload(file);
-                        }}
-                      />
-                    </label>
+                  <div className="w-full max-w-sm p-4">
+                    <FileUploadField
+                      file={pendingFile}
+                      onSelect={handlePdfUpload}
+                      onClear={() => setPendingFile(null)}
+                      progress={uploadingFile ? (uploadProgress ?? 0) : null}
+                      disabled={uploadingFile}
+                      title="Subir presentación"
+                    />
                   </div>
                 )}
               </div>
@@ -1009,19 +1003,13 @@ export default function TemplateBuilderPage() {
               </div>
 
               {(newStageType === 'PDF' || newStageType === 'PRESENTATION') && (
-                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                    {newStageType === 'PRESENTATION'
-                      ? 'Archivo PPTX de la escena'
-                      : 'Archivo de la escena (PDF, Word, Excel, texto)'}
-                  </label>
-                  <Input
-                    type="file"
-                    accept={acceptForStageType(newStageType)}
-                    onChange={(e) => setNewStageFile(e.target.files?.[0] ?? null)}
-                    className="file:bg-primary file:text-primary-foreground file:text-xs file:rounded-md file:border-0"
+                <div className="mt-3">
+                  <FileUploadField
+                    file={newStageFile}
+                    onSelect={setNewStageFile}
+                    onClear={() => setNewStageFile(null)}
+                    title="Subir presentación"
                   />
-                  {newStageFile && <p className="text-xs text-primary truncate">Seleccionado: {newStageFile.name}</p>}
                 </div>
               )}
 

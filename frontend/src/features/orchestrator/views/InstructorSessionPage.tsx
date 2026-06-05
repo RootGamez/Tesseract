@@ -46,7 +46,8 @@ import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import InstructorQuizFlow from '@/features/quiz/components/InstructorQuizFlow';
 import { useQuizStore } from '@/features/quiz/store/useQuizStore';
 import { quizService } from '@/shared/services/quizService';
-import { resourceTypeForFile, acceptForStageType } from '@/shared/utils/resourceTypes';
+import { resourceTypeForFile } from '@/shared/utils/resourceTypes';
+import { FileUploadField } from '@/shared/components/ui/file-upload';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 import TimerWidget from '@/features/gamification/components/TimerWidget';
 
@@ -83,6 +84,7 @@ export default function InstructorSessionPage() {
   const [newStageDuration, setNewStageDuration] = useState('10');
   const [isCreatingStage, setIsCreatingStage] = useState(false);
   const [pptFile, setPptFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [isStagesDrawerOpen, setIsStagesDrawerOpen] = useState(false);
@@ -119,6 +121,13 @@ export default function InstructorSessionPage() {
 
   const activeStage = stages.find(s => s.id === activeStageId);
   const activeIdx = stages.findIndex(s => s.id === activeStageId);
+
+  // Stage types offered in the "Agregar escena" modal.
+  const stageTypeOptions = [
+    { type: 'BOARD', label: 'Pizarra', description: 'Lienzo digital interactivo colaborativo.', icon: Zap, badge: { text: 'Listo', tone: 'bg-green-500/20 text-green-600 dark:text-green-400' } },
+    { type: 'PDF', label: 'Documentos', description: 'PDF, PowerPoint, Word, Excel y texto compartidos.', icon: FolderOpen, badge: { text: 'PDF', tone: 'bg-primary/20 text-primary' } },
+    { type: 'QUIZ', label: 'Quiz', description: 'Cuestionarios interactivos estilo Kahoot.', icon: Trophy, badge: { text: 'Listo', tone: 'bg-green-500/20 text-green-600 dark:text-green-400' } },
+  ] as const;
 
   const handleSpinner = () => setIsRouletteOpen(true);
 
@@ -270,7 +279,7 @@ export default function InstructorSessionPage() {
     if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && !pptFile) {
       toast({
         title: 'Archivo requerido',
-        description: 'Selecciona un archivo PDF o PPTX para esta escena antes de crearla.',
+        description: 'Sube un archivo (PDF, PowerPoint, Word, Excel o texto) para esta escena antes de crearla.',
         variant: 'destructive',
       });
       return;
@@ -305,8 +314,12 @@ export default function InstructorSessionPage() {
         formData.append('resource_type', resourceType);
         formData.append('stage_id', created.id);
 
+        setUploadProgress(0);
         await apiClient.post(`/api/v1/resources/sessions/${id}/upload/`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+          },
         });
       }
 
@@ -334,6 +347,7 @@ export default function InstructorSessionPage() {
       });
     } finally {
       setIsCreatingStage(false);
+      setUploadProgress(null);
     }
   };
 
@@ -1133,32 +1147,31 @@ export default function InstructorSessionPage() {
 
       {/* ── MODAL AGREGAR ESCENA ───────────────────────── */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="sm:max-w-[500px] bg-zinc-950 text-white border-zinc-800 shadow-2xl">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
               <Plus className="w-5 h-5 text-primary" />
               Agregar Nueva Escena
             </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-sm">
+            <DialogDescription>
               Selecciona el tipo de escena para tu clase interactiva.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 my-2">
+          <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Título de la Escena
               </label>
               <Input
                 placeholder="Ej. Pizarra de Dibujo Libre"
                 value={newStageTitle}
                 onChange={(e) => setNewStageTitle(e.target.value)}
-                className="bg-zinc-900 border-zinc-800 text-white focus-visible:ring-primary focus-visible:border-primary placeholder:text-zinc-600"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Duración Estimada (minutos)
               </label>
               <Input
@@ -1166,90 +1179,57 @@ export default function InstructorSessionPage() {
                 min={1} max={120}
                 value={newStageDuration}
                 onChange={(e) => setNewStageDuration(e.target.value)}
-                className="bg-zinc-900 border-zinc-800 text-white focus-visible:ring-primary focus-visible:border-primary w-24 font-mono"
+                className="w-24 font-mono"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block mb-1">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
                 Funcionalidad / Tipo de Escena
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                {/* BOARD */}
-                <div
-                  onClick={() => handleSelectStageType('BOARD')}
-                  className={cn(
-                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
-                    newStageType === 'BOARD' ? 'border-primary bg-primary/10 text-white' : 'border-zinc-800 bg-zinc-900/40 text-zinc-400'
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'BOARD' ? 'bg-primary text-white' : 'bg-zinc-800')}>
-                      <Zap className="w-4 h-4" />
-                    </div>
-                    <span className="font-semibold text-sm text-white">Pizarra</span>
-                  </div>
-                  <p className="text-[11px] leading-snug text-zinc-400">Lienzo digital interactivo colaborativo.</p>
-                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400 border-0 text-[9px] px-1.5 py-0">Listo</Badge>
-                </div>
-
-                {/* VISOR PDF */}
-                <div
-                  onClick={() => handleSelectStageType('PDF')}
-                  className={cn(
-                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
-                    newStageType === 'PDF' ? 'border-primary bg-primary/10 text-white' : 'border-zinc-800 bg-zinc-900/40 text-zinc-400'
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'PDF' ? 'bg-primary text-white' : 'bg-zinc-800')}>
-                      <FolderOpen className="w-4 h-4" />
-                    </div>
-                    <span className="font-semibold text-sm text-white">Visor PDF</span>
-                  </div>
-                  <p className="text-[11px] leading-snug text-zinc-400">Presentaciones y diapositivas compartidas.</p>
-                  <Badge className="absolute top-2 right-2 bg-primary/20 text-primary border-0 text-[9px] px-1.5 py-0">PDF</Badge>
-                </div>
-
-                {/* QUIZ */}
-                <div
-                  onClick={() => handleSelectStageType('QUIZ')}
-                  className={cn(
-                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
-                    newStageType === 'QUIZ' ? 'border-primary bg-primary/10 text-white' : 'border-zinc-800 bg-zinc-900/40 text-zinc-400'
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'QUIZ' ? 'bg-primary text-white' : 'bg-zinc-800')}>
-                      <Trophy className="w-4 h-4" />
-                    </div>
-                    <span className="font-semibold text-sm text-white">Quiz</span>
-                  </div>
-                  <p className="text-[11px] leading-snug text-zinc-400">Cuestionarios interactivos estilo Kahoot.</p>
-                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-400 border-0 text-[9px] px-1.5 py-0">Listo</Badge>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {stageTypeOptions.map((opt) => {
+                  const active = newStageType === opt.type;
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      type="button"
+                      key={opt.type}
+                      onClick={() => handleSelectStageType(opt.type)}
+                      className={cn(
+                        'text-left p-3.5 rounded-xl border-2 transition-all duration-200 flex flex-col gap-2 relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                        active ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:border-primary/40 hover:bg-muted/50'
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="font-semibold text-sm text-foreground">{opt.label}</span>
+                      </div>
+                      <p className="text-[11px] leading-snug text-muted-foreground pr-10">{opt.description}</p>
+                      <Badge className={cn('absolute top-2 right-2 border-0 text-[9px] px-1.5 py-0', opt.badge.tone)}>{opt.badge.text}</Badge>
+                    </button>
+                  );
+                })}
               </div>
 
               {(newStageType === 'PDF' || newStageType === 'PRESENTATION') && (
-                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3">
-                  <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">
-                    {newStageType === 'PRESENTATION'
-                      ? 'Archivo PPTX de la escena'
-                      : 'Archivo de la escena (PDF, Word, Excel, texto)'}
-                  </label>
-                  <Input
-                    type="file"
-                    accept={acceptForStageType(newStageType)}
-                    onChange={(e) => setPptFile(e.target.files?.[0] ?? null)}
-                    className="bg-zinc-900 border-zinc-800 text-white file:bg-primary file:text-primary-foreground file:text-xs file:rounded-md file:border-0"
+                <div className="mt-3">
+                  <FileUploadField
+                    file={pptFile}
+                    onSelect={setPptFile}
+                    onClear={() => setPptFile(null)}
+                    progress={uploadProgress}
+                    disabled={isCreatingStage}
+                    title="Subir presentación"
                   />
-                  {pptFile && <p className="text-xs text-primary truncate">Seleccionado: {pptFile.name}</p>}
                 </div>
               )}
 
               {newStageType === 'QUIZ' && (
                 <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3 animate-fade-in">
-                  <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
                     Seleccionar Quiz Guardado (Opcional)
                   </label>
                   <select
@@ -1264,7 +1244,7 @@ export default function InstructorSessionPage() {
                         }
                       }
                     }}
-                    className="w-full h-9 rounded-md border border-zinc-800 bg-zinc-900 text-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                    className="w-full h-9 rounded-md border border-input bg-background text-foreground px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                   >
                     <option value="">-- Crear Quiz en Blanco --</option>
                     {savedQuizzes.map((quiz) => (
@@ -1273,7 +1253,7 @@ export default function InstructorSessionPage() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-zinc-500">
+                  <p className="text-[10px] text-muted-foreground">
                     Si seleccionas un quiz, se copiarán sus preguntas para esta escena.
                   </p>
                 </div>
@@ -1282,7 +1262,7 @@ export default function InstructorSessionPage() {
           </div>
 
           <DialogFooter className="mt-4 gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-zinc-800 text-zinc-400">
+            <Button variant="outline" onClick={() => setIsAddOpen(false)}>
               Cancelar
             </Button>
             <Button onClick={handleCreateStage} disabled={isCreatingStage || !newStageTitle.trim()} className="sidebar-gradient border-0 text-white">
