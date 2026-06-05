@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
   Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2,
-  Copy, Link, UserPlus, List, SlidersHorizontal
+  Copy, Link, UserPlus,
+  PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen
 } from 'lucide-react';
 
 // UI Shared Components
@@ -89,6 +90,9 @@ export default function InstructorSessionPage() {
   const [chatInput, setChatInput] = useState('');
   const [isStagesDrawerOpen, setIsStagesDrawerOpen] = useState(false);
   const [isControlsDrawerOpen, setIsControlsDrawerOpen] = useState(false);
+  // Desktop sidebars are collapsible; default open.
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
   const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
   const [quizLaunched, setQuizLaunched] = useState(false);
@@ -407,6 +411,16 @@ export default function InstructorSessionPage() {
     setNewStageType(stageType);
   };
 
+  // Floating panel toggles: collapse the sidebar on desktop, open the drawer on mobile.
+  const toggleLeftPanel = () => {
+    if (window.matchMedia('(min-width: 1024px)').matches) setLeftOpen(o => !o);
+    else setIsStagesDrawerOpen(true);
+  };
+  const toggleRightPanel = () => {
+    if (window.matchMedia('(min-width: 1280px)').matches) setRightOpen(o => !o);
+    else setIsControlsDrawerOpen(true);
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
       {/* ── TOPBAR ────────────────────────────────────── */}
@@ -499,8 +513,40 @@ export default function InstructorSessionPage() {
 
       {/* ── MAIN BODY ─────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* LEFT SIDEBAR — Stage list (desktop) */}
-        <aside className="hidden lg:flex w-[220px] border-r border-border bg-card flex flex-col shrink-0">
+        {/* ── FLOATING PANEL TOGGLES ──────────────────────── */}
+        {/* Left toggle (blue) — moves with the panel edge on desktop */}
+        <button
+          onClick={toggleLeftPanel}
+          title={leftOpen ? 'Ocultar escenas' : 'Mostrar escenas'}
+          aria-label="Mostrar u ocultar el panel de escenas"
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-10 w-10 rounded-full',
+            'sidebar-gradient text-white shadow-lg ring-1 ring-black/10 hover:scale-105 active:scale-95 transition-all duration-200',
+            'left-3', leftOpen && 'lg:left-[232px]'
+          )}
+        >
+          {leftOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
+        </button>
+
+        {/* Right toggle (yellow) — moves with the panel edge on desktop */}
+        <button
+          onClick={toggleRightPanel}
+          title={rightOpen ? 'Ocultar controles' : 'Mostrar controles'}
+          aria-label="Mostrar u ocultar el panel de controles"
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-10 w-10 rounded-full',
+            'bg-yellow-500 hover:bg-yellow-400 text-white shadow-lg ring-1 ring-black/10 hover:scale-105 active:scale-95 transition-all duration-200',
+            'right-3', rightOpen && 'xl:right-[292px]'
+          )}
+        >
+          {rightOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
+        </button>
+
+        {/* LEFT SIDEBAR — Stage list (desktop, collapsible) */}
+        <aside className={cn(
+          'hidden lg:flex border-r border-border bg-card flex-col shrink-0 overflow-hidden transition-[width] duration-200 ease-out',
+          leftOpen ? 'w-[220px]' : 'w-0 border-r-0'
+        )}>
           <div className="p-3 border-b border-border flex gap-2">
             <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={goPrev} disabled={activeIdx <= 0}>
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -731,8 +777,11 @@ export default function InstructorSessionPage() {
           )}
         </main>
 
-        {/* RIGHT SIDEBAR — Controls (desktop) */}
-        <aside className="hidden xl:flex w-[280px] border-l border-border bg-card flex flex-col shrink-0">
+        {/* RIGHT SIDEBAR — Controls (desktop, collapsible) */}
+        <aside className={cn(
+          'hidden xl:flex border-l border-border bg-card flex-col shrink-0 overflow-hidden transition-[width] duration-200 ease-out',
+          rightOpen ? 'w-[280px]' : 'w-0 border-l-0'
+        )}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <div className="p-2 border-b border-border shrink-0">
               <TabsList className="w-full h-8">
@@ -963,17 +1012,6 @@ export default function InstructorSessionPage() {
       {/* ── FOOTER TOOLBAR ─────────────────────────────── */}
       <footer className="h-13 border-t border-border bg-card/80 backdrop-blur flex items-center justify-between px-3 sm:px-4 shrink-0">
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Mobile stage toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-2 text-xs gap-1 lg:hidden"
-            onClick={() => setIsStagesDrawerOpen(true)}
-          >
-            <List className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Escenas</span>
-          </Button>
-
           <span className="text-xs text-muted-foreground font-medium hidden md:inline">Herramientas:</span>
           {activeStage?.type === 'BOARD' && (
             <Button variant="secondary" size="sm" className="h-8 text-xs gap-1 sm:gap-1.5">
@@ -998,17 +1036,6 @@ export default function InstructorSessionPage() {
           )}
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Mobile controls toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-2 text-xs gap-1 xl:hidden"
-            onClick={() => setIsControlsDrawerOpen(true)}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Controles</span>
-          </Button>
-
           <Button variant="outline" size="sm" className="h-8 px-2 sm:px-3 text-xs gap-1 sm:gap-2 hidden sm:flex" onClick={() => setIsJoinOpen(true)}>
             <UserPlus className="w-3.5 h-3.5" />
             Unirse

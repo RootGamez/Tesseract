@@ -101,11 +101,20 @@ export default function DashboardPage() {
                       key={session.id}
                       whileHover={{ backgroundColor: 'hsl(var(--muted) / 0.5)' }}
                       className="flex items-center justify-between px-5 py-4 cursor-pointer transition-colors"
-                      onClick={() =>
-                        session.state === 'LIVE'
-                          ? navigate(`/session/${session.id}/instructor`)
-                          : navigate(`/sessions/${session.id}`)
-                      }
+                      onClick={async () => {
+                        if (session.state === 'ENDED') {
+                          navigate(`/session/${session.id}/replay`);
+                          return;
+                        }
+                        if (session.state === 'SCHEDULED') {
+                          try {
+                            await sessionsService.start(session.id);
+                          } catch (err) {
+                            console.error('Failed to start session:', err);
+                          }
+                        }
+                        navigate(`/session/${session.id}/instructor`);
+                      }}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-xl card-gradient-blue flex items-center justify-center shrink-0">
