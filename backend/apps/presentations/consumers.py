@@ -256,12 +256,15 @@ class PresentationConsumer(AsyncWebsocketConsumer):
     def _get_slides(self, presentation_id):
         from apps.presentations.models import PresentationSlide
 
+        from apps.resources.storage import generate_presigned_url
+
         slides = PresentationSlide.objects.filter(presentation_id=presentation_id).order_by("index")
         return [
             {
                 "id": str(slide.pk),
                 "index": slide.index,
                 "image_key": slide.image_key,
+                "image_url": generate_presigned_url(slide.image_key) if slide.image_key else None,
                 "thumbnail_key": slide.thumbnail_key,
                 "mime_type": slide.mime_type,
                 "width": slide.width,

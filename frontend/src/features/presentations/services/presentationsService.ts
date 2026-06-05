@@ -4,6 +4,7 @@ export interface PresentationSlide {
   id: string;
   index: number;
   image_key: string;
+  image_url?: string;
   thumbnail_key?: string;
   mime_type: string;
   width: number;

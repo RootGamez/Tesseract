@@ -246,6 +246,9 @@ class LiveSession(BaseModel):
                 elif resource_type == "PDF":
                     from apps.ai_copilot.tasks import generate_questions_from_resource
                     generate_questions_from_resource.delay(str(resource_id))
+                elif resource_type == "DOCUMENT":
+                    from apps.resources.tasks import convert_document_to_pdf
+                    convert_document_to_pdf.delay(str(resource_id))
             except Exception:
                 pass
 
@@ -269,6 +272,8 @@ class LiveSession(BaseModel):
                     name=res.name,
                     resource_type=res.resource_type,
                     file_key=res.file_key,
+                    # Reuse the already-rendered PDF so documents aren't reconverted.
+                    converted_pdf_key=res.converted_pdf_key,
                     size_bytes=res.size_bytes,
                     content_type=res.content_type,
                     presigned_url=generate_presigned_url(res.file_key),
@@ -276,9 +281,11 @@ class LiveSession(BaseModel):
                     is_dry_run_temp=self.is_dry_run,
                 )
                 # Re-run session-scoped processing for the copied asset once committed.
-                transaction.on_commit(
-                    lambda rid=new_res.pk, rtype=new_res.resource_type: _dispatch_processing(rid, rtype)
-                )
+                # Documents only need conversion if the PDF wasn't already rendered.
+                if not (new_res.resource_type == "DOCUMENT" and new_res.converted_pdf_key):
+                    transaction.on_commit(
+                        lambda rid=new_res.pk, rtype=new_res.resource_type: _dispatch_processing(rid, rtype)
+                    )
 
     @property
     def is_live(self):

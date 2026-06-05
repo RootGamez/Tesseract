@@ -112,27 +112,49 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
       return;
     }
     let alive = true;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     setIsLoading(true);
     setErrorMessage(null);
     setPageCount(0);
     pdfRef.current = null;
 
-    apiClient.get(`/api/v1/resources/sessions/${sessionId}/files/`)
-      .then(res => {
-        if (!alive) return;
-        const resources = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        let match = resources.find((r: any) => r.resource_type === 'PDF' && String(r.stage) === String(activeStageId));
-        if (!match) match = resources.filter((r: any) => r.resource_type === 'PDF' && r.presigned_url).slice(-1)[0];
-        if (match?.id) {
-          return apiClient.get(`/api/v1/resources/${match.id}/download/`, { responseType: 'blob' })
-            .then(dl => { if (alive) setPdfUrl(URL.createObjectURL(dl.data as Blob)); });
-        }
-        setErrorMessage('No se encontró un PDF para esta escena.');
-      })
-      .catch(() => { if (alive) setErrorMessage('No se pudo cargar el PDF.'); })
-      .finally(() => { if (alive) setIsLoading(false); });
+    // Both native PDFs and documents rendered to PDF are shown here.
+    const isViewable = (r: any) => r.resource_type === 'PDF' || r.resource_type === 'DOCUMENT';
 
-    return () => { alive = false; };
+    const load = () => {
+      apiClient.get(`/api/v1/resources/sessions/${sessionId}/files/`)
+        .then(res => {
+          if (!alive) return;
+          const resources = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+          let match = resources.find((r: any) => isViewable(r) && String(r.stage) === String(activeStageId));
+          // Only fall back to "any document" when no specific stage is targeted —
+          // otherwise a stage without its own file would show another stage's PDF.
+          if (!match && !activeStageId) match = resources.filter((r: any) => isViewable(r) && r.presigned_url).slice(-1)[0];
+          if (!match?.id) {
+            setErrorMessage('No se encontró un documento para esta escena.');
+            setIsLoading(false);
+            return;
+          }
+          // A document is still being converted to PDF — show a hint and poll.
+          if (match.resource_type === 'DOCUMENT' && match.is_converted === false) {
+            setErrorMessage('Convirtiendo documento…');
+            setIsLoading(false);
+            retryTimer = setTimeout(load, 3000);
+            return;
+          }
+          const isDoc = match.resource_type === 'DOCUMENT';
+          const url = `/api/v1/resources/${match.id}/download/${isDoc ? '?variant=pdf' : ''}`;
+          apiClient.get(url, { responseType: 'blob' })
+            .then(dl => { if (alive) { setPdfUrl(URL.createObjectURL(dl.data as Blob)); setErrorMessage(null); } })
+            .catch(() => { if (alive) setErrorMessage('No se pudo cargar el documento.'); })
+            .finally(() => { if (alive) setIsLoading(false); });
+        })
+        .catch(() => { if (alive) { setErrorMessage('No se pudo cargar el documento.'); setIsLoading(false); } });
+    };
+
+    load();
+
+    return () => { alive = false; if (retryTimer) clearTimeout(retryTimer); };
   }, [sessionId, activeStageId, localFileUrl]);
 
   // ── Init PDF document ────────────────────────────────────────────────────────

@@ -46,6 +46,7 @@ import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import InstructorQuizFlow from '@/features/quiz/components/InstructorQuizFlow';
 import { useQuizStore } from '@/features/quiz/store/useQuizStore';
 import { quizService } from '@/shared/services/quizService';
+import { resourceTypeForFile, acceptForStageType } from '@/shared/utils/resourceTypes';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 import TimerWidget from '@/features/gamification/components/TimerWidget';
 
@@ -277,9 +278,17 @@ export default function InstructorSessionPage() {
 
     setIsCreatingStage(true);
     try {
+      // The uploaded file decides the viewer: PPTX → presentation stage,
+      // PDF/Word/Excel/text → PDF stage. This keeps the stage type and the
+      // file in sync no matter which tile the user picked.
+      const resourceType = pptFile ? resourceTypeForFile(pptFile.name) : null;
+      const effectiveStageType = resourceType
+        ? (resourceType === 'PRESENTATION' ? 'PRESENTATION' : 'PDF')
+        : newStageType;
+
       const payload: any = {
         title: newStageTitle.trim(),
-        stage_type: newStageType,
+        stage_type: effectiveStageType,
         duration_estimated_minutes: Number(newStageDuration),
       };
 
@@ -290,9 +299,7 @@ export default function InstructorSessionPage() {
       // Stages belong to the session itself (not the template).
       const created = await sessionsService.addStage(id, payload);
 
-      if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && pptFile) {
-        const extension = pptFile.name.split('.').pop()?.toLowerCase();
-        const resourceType = extension === 'pdf' ? 'PDF' : 'PRESENTATION';
+      if (resourceType && pptFile) {
         const formData = new FormData();
         formData.append('file', pptFile);
         formData.append('resource_type', resourceType);
@@ -1226,11 +1233,13 @@ export default function InstructorSessionPage() {
               {(newStageType === 'PDF' || newStageType === 'PRESENTATION') && (
                 <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3">
                   <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">
-                    Archivo PDF / PPTX de la escena
+                    {newStageType === 'PRESENTATION'
+                      ? 'Archivo PPTX de la escena'
+                      : 'Archivo de la escena (PDF, Word, Excel, texto)'}
                   </label>
                   <Input
                     type="file"
-                    accept=".pdf,.ppt,.pptx"
+                    accept={acceptForStageType(newStageType)}
                     onChange={(e) => setPptFile(e.target.files?.[0] ?? null)}
                     className="bg-zinc-900 border-zinc-800 text-white file:bg-primary file:text-primary-foreground file:text-xs file:rounded-md file:border-0"
                   />

@@ -85,6 +85,79 @@ def upload_resource_to_storage(self, resource_id: str, temp_file_path: str):
             os.remove(temp_file_path)
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def convert_document_to_pdf(self, resource_id: str):
+    """
+    Render an office/text DOCUMENT resource (Word, spreadsheet, txt/markdown) to PDF
+    using LibreOffice headless, store the PDF in S3/MinIO and link it on the resource
+    via `converted_pdf_key`. Notifies the session so the viewer reloads.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from django.core.files.storage import default_storage
+
+    from apps.resources.models import Resource
+    from apps.resources.storage import upload_file
+    from apps.presentations.tasks import run_office_convert
+
+    temp_dir = tempfile.mkdtemp(prefix="document-pdf-")
+    downloaded_temp = None
+    try:
+        resource = Resource.objects.select_related("session").get(pk=resource_id)
+
+        # Download the original document so the worker can convert it.
+        suffix = "." + (resource.name.rsplit(".", 1)[-1] if "." in resource.name else "tmp")
+        fd, downloaded_temp = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        with open(downloaded_temp, "wb") as out_f:
+            with default_storage.open(resource.file_key, "rb") as in_f:
+                out_f.write(in_f.read())
+
+        # Convert to PDF.
+        run_office_convert(downloaded_temp, temp_dir, "pdf")
+        pdfs = sorted(Path(temp_dir).glob("*.pdf"))
+        if not pdfs:
+            raise RuntimeError("LibreOffice did not produce a PDF.")
+
+        converted_key = f"converted/{resource.pk}.pdf"
+        with open(pdfs[0], "rb") as pdf_f:
+            upload_file(pdf_f, converted_key, "application/pdf")
+
+        resource.converted_pdf_key = converted_key
+        resource.save(update_fields=["converted_pdf_key"])
+
+        logger.info("document_converted_to_pdf", resource_id=resource_id, key=converted_key)
+
+        # Notify the session so the viewer picks up the now-ready PDF.
+        if resource.session_id:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"session_{resource.session_id}",
+                {
+                    "type": "resource.added",
+                    "event": RESOURCE_ADDED,
+                    "payload": {
+                        "resource_id": str(resource.pk),
+                        "name": resource.name,
+                        "type": resource.resource_type,
+                        "size_bytes": resource.size_bytes,
+                    },
+                },
+            )
+    except Exception as exc:
+        logger.error("document_conversion_failed", resource_id=resource_id, error=str(exc))
+        raise self.retry(exc=exc)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        if downloaded_temp and os.path.exists(downloaded_temp):
+            try:
+                os.remove(downloaded_temp)
+            except Exception:
+                pass
+
+
 @shared_task
 def refresh_expiring_presigned_urls():
     """

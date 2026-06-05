@@ -179,9 +179,12 @@ export default function CollaborativePresentationStage({ sessionId, role, sendMe
     const fabricCanvas = fabricCanvasRef.current;
     if (!fabricCanvas || !currentSlide) return;
 
-    const slideUrl = currentSlide.image_key.startsWith('http')
-      ? currentSlide.image_key
-      : `${import.meta.env.VITE_MEDIA_URL || ''}/${currentSlide.image_key}`;
+    // Prefer the presigned URL from the backend; fall back to VITE_MEDIA_URL only if absent.
+    const slideUrl = currentSlide.image_url
+      ? currentSlide.image_url
+      : currentSlide.image_key.startsWith('http')
+        ? currentSlide.image_key
+        : `${import.meta.env.VITE_MEDIA_URL || ''}/${currentSlide.image_key}`;
 
     let disposed = false;
     FabricImage.fromURL(slideUrl).then((image) => {

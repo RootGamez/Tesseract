@@ -3,6 +3,7 @@ Celery tasks for collaborative presentations.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -16,23 +17,30 @@ from django.core.files.storage import default_storage
 logger = structlog.get_logger(__name__)
 
 
-def _convert_with_office(source_file_path: str, output_dir: str) -> list[Path]:
+def run_office_convert(source_file_path: str, output_dir: str, fmt: str) -> None:
+    """Convert a file to `fmt` using LibreOffice headless (falling back to unoconv).
+
+    Shared by presentation rendering (fmt="png") and document → PDF conversion
+    (fmt="pdf"). Output files land in `output_dir`.
+    """
     commands = [
-        ["soffice", "--headless", "--convert-to", "png", "--outdir", output_dir, source_file_path],
-        ["unoconv", "-f", "png", "-o", output_dir, source_file_path],
+        ["soffice", "--headless", "--convert-to", fmt, "--outdir", output_dir, source_file_path],
+        ["unoconv", "-f", fmt, "-o", output_dir, source_file_path],
     ]
 
     last_error: Exception | None = None
     for command in commands:
         try:
             completed = subprocess.run(command, capture_output=True, check=True, text=True)
-            logger.info("presentation_convert_ok", command=" ".join(command), stdout=completed.stdout, stderr=completed.stderr)
-            break
+            logger.info("office_convert_ok", command=" ".join(command), stdout=completed.stdout, stderr=completed.stderr)
+            return
         except Exception as exc:
             last_error = exc
-    else:
-        raise RuntimeError(f"Could not convert presentation: {last_error}")
+    raise RuntimeError(f"Could not convert file with LibreOffice: {last_error}")
 
+
+def _convert_with_office(source_file_path: str, output_dir: str) -> list[Path]:
+    run_office_convert(source_file_path, output_dir, "png")
     return sorted(Path(output_dir).glob("*.png"))
 
 

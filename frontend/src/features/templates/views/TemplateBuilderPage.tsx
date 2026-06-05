@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 // Services
 import { templatesService, type TemplateStage } from '@/shared/services/templatesService';
+import { resourceTypeForFile, acceptForStageType } from '@/shared/utils/resourceTypes';
 import { sessionsService } from '@/shared/services/sessionsService';
 import { quizService } from '@/shared/services/quizService';
 import apiClient from '@/shared/services/apiClient';
@@ -314,9 +315,13 @@ export default function TemplateBuilderPage() {
 
       // Persist the chosen file on the template stage + keep an object URL for instant preview.
       if (newStage.id && newStageFile && (newStageType === 'PDF' || newStageType === 'PRESENTATION')) {
-        const resourceType = newStageFile.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'PRESENTATION';
-        const url = URL.createObjectURL(newStageFile);
-        setLocalFileUrls(prev => ({ ...prev, [newStage.id!]: url }));
+        const resourceType = resourceTypeForFile(newStageFile.name);
+        // Documents are only viewable after server-side PDF conversion, so don't
+        // create a local object-URL preview for them (pdf.js can't render the raw file).
+        if (resourceType === 'PDF') {
+          const url = URL.createObjectURL(newStageFile);
+          setLocalFileUrls(prev => ({ ...prev, [newStage.id!]: url }));
+        }
         try {
           const resource = await templatesService.uploadFile(id, newStage.id, newStageFile, resourceType);
           setTemplateFiles(prev => [...prev, resource]);
@@ -383,9 +388,12 @@ export default function TemplateBuilderPage() {
   // Upload a PDF/PPTX for the active stage (in-center editing) and persist it on the template.
   const handlePdfUpload = async (file: File) => {
     if (!activeStageId || !id) return;
-    const resourceType = file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'PRESENTATION';
-    const url = URL.createObjectURL(file);
-    setLocalFileUrls(prev => ({ ...prev, [activeStageId]: url }));
+    const resourceType = resourceTypeForFile(file.name);
+    // Documents need server-side PDF conversion before they can be previewed.
+    if (resourceType === 'PDF') {
+      const url = URL.createObjectURL(file);
+      setLocalFileUrls(prev => ({ ...prev, [activeStageId]: url }));
+    }
     setStages(current => current.map(s => (
       s.id === activeStageId ? { ...s, config: { ...s.config, filename: file.name } } : s
     )));
@@ -730,7 +738,7 @@ export default function TemplateBuilderPage() {
                     <FolderOpen className="w-10 h-10 text-muted-foreground/60 mx-auto mb-4 animate-pulse" />
                     <h3 className="font-medium text-sm text-foreground mb-1">Cargar Documento PDF</h3>
                     <p className="text-xs text-muted-foreground mb-4">
-                      Sube el archivo PDF para previsualizarlo en el constructor y tenerlo listo para la clase.
+                      Sube un PDF, PPTX, documento de Word, hoja de cálculo o texto para tenerlo listo para la clase.
                     </p>
                     <label className={cn(
                       'inline-flex items-center justify-center gap-2 cursor-pointer sidebar-gradient text-white text-xs font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity',
@@ -740,7 +748,7 @@ export default function TemplateBuilderPage() {
                       <span>{uploadingFile ? 'Subiendo...' : 'Elegir Archivo'}</span>
                       <input
                         type="file"
-                        accept=".pdf"
+                        accept={acceptForStageType(activeStage.stage_type)}
                         className="hidden"
                         disabled={uploadingFile}
                         onChange={(e) => {
@@ -1003,11 +1011,13 @@ export default function TemplateBuilderPage() {
               {(newStageType === 'PDF' || newStageType === 'PRESENTATION') && (
                 <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                    Archivo PDF / PPTX de la escena
+                    {newStageType === 'PRESENTATION'
+                      ? 'Archivo PPTX de la escena'
+                      : 'Archivo de la escena (PDF, Word, Excel, texto)'}
                   </label>
                   <Input
                     type="file"
-                    accept=".pdf,.ppt,.pptx"
+                    accept={acceptForStageType(newStageType)}
                     onChange={(e) => setNewStageFile(e.target.files?.[0] ?? null)}
                     className="file:bg-primary file:text-primary-foreground file:text-xs file:rounded-md file:border-0"
                   />

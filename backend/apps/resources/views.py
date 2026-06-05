@@ -16,6 +16,10 @@ from .serializers import ResourceSerializer, ResourceUploadSerializer, SnippetSe
 from .storage import upload_file, generate_presigned_url, _get_s3_client
 
 
+# Office/text documents that we render to PDF (via LibreOffice) for the viewer.
+DOCUMENT_EXTENSIONS = {".docx", ".doc", ".xlsx", ".ods", ".odt", ".txt", ".md"}
+
+
 def _validate_upload(serializer):
     """Shared validation for uploaded files (type + size). Returns an error Response or None."""
     uploaded_file = serializer.validated_data["file"]
@@ -26,6 +30,14 @@ def _validate_upload(serializer):
         if ext not in {".ppt", ".pptx"}:
             return Response(
                 {"error": {"message": "La presentación debe ser un archivo .ppt o .pptx."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    if resource_type == "DOCUMENT":
+        ext = os.path.splitext(uploaded_file.name)[1].lower()
+        if ext not in DOCUMENT_EXTENSIONS:
+            allowed = ", ".join(sorted(DOCUMENT_EXTENSIONS))
+            return Response(
+                {"error": {"message": f"Tipo de documento no soportado. Formatos permitidos: {allowed}."}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
     if uploaded_file.size > 50 * 1024 * 1024:
@@ -68,11 +80,25 @@ class ResourceDownloadView(APIView):
         if not self._can_access(resource, request.user):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        # `?variant=pdf` serves the PDF rendered from a DOCUMENT resource (for the viewer).
+        file_key = resource.file_key
+        content_type = resource.content_type or "application/octet-stream"
+        filename = resource.name
+        if request.query_params.get("variant") == "pdf":
+            if not resource.converted_pdf_key:
+                return Response(
+                    {"detail": "El documento aún se está convirtiendo."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            file_key = resource.converted_pdf_key
+            content_type = "application/pdf"
+            filename = f"{os.path.splitext(resource.name)[0]}.pdf"
+
         client = _get_s3_client()
-        obj = client.get_object(Bucket=os.environ.get("MINIO_BUCKET_NAME", "tesseract"), Key=resource.file_key)
+        obj = client.get_object(Bucket=os.environ.get("MINIO_BUCKET_NAME", "tesseract"), Key=file_key)
         body = obj["Body"]
-        response = StreamingHttpResponse(body.iter_chunks(), content_type=resource.content_type or "application/octet-stream")
-        response["Content-Disposition"] = f'inline; filename="{resource.name}"'
+        response = StreamingHttpResponse(body.iter_chunks(), content_type=content_type)
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
         return response
 
     @staticmethod
@@ -120,7 +146,8 @@ class ResourceUploadView(APIView):
         object_key = f"sessions/{session_id}/{uuid.uuid4()}{os.path.splitext(uploaded_file.name)[1]}"
 
         try:
-            if resource_type == "PDF" and (stage is None or stage.stage_type != "PDF"):
+            # PDFs and documents (rendered to PDF) are shown in the PDF viewer stage.
+            if resource_type in ("PDF", "DOCUMENT") and (stage is None or stage.stage_type != "PDF"):
                 agg = Stage.objects.filter(session=session).aggregate(max_order=Max("order"))
                 next_order = (agg["max_order"] + 1) if agg["max_order"] is not None else 0
                 stage = Stage.objects.create(
@@ -156,6 +183,9 @@ class ResourceUploadView(APIView):
             if resource_type == "PDF":
                 from apps.ai_copilot.tasks import generate_questions_from_resource
                 generate_questions_from_resource.delay(str(resource.pk))
+            if resource_type == "DOCUMENT":
+                from apps.resources.tasks import convert_document_to_pdf
+                convert_document_to_pdf.delay(str(resource.pk))
         except Exception as e:
             Resource.objects.filter(session=session, file_key=object_key).delete()
             return Response({"error": {"message": str(e)}}, status=500)
@@ -211,6 +241,11 @@ class TemplateResourceUploadView(APIView):
                 presigned_url=generate_presigned_url(object_key),
                 is_uploaded=True,
             )
+
+            # Pre-render documents to PDF so the asset is ready when a class starts.
+            if resource_type == "DOCUMENT":
+                from apps.resources.tasks import convert_document_to_pdf
+                convert_document_to_pdf.delay(str(resource.pk))
         except Exception as e:
             Resource.objects.filter(stage=stage, file_key=object_key).delete()
             return Response({"error": {"message": str(e)}}, status=500)

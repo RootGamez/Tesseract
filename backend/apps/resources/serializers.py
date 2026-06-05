@@ -6,14 +6,22 @@ from .models import Resource, Snippet
 class ResourceSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source="uploaded_by.display_name", read_only=True)
     presigned_url = serializers.SerializerMethodField()
+    # True once a DOCUMENT has been rendered to PDF (always True for non-documents).
+    is_converted = serializers.SerializerMethodField()
 
     class Meta:
         model = Resource
         fields = [
             "id", "session", "stage", "uploaded_by", "uploaded_by_name",
-            "name", "resource_type", "size_bytes", "presigned_url", "is_uploaded", "created_at"
+            "name", "resource_type", "size_bytes", "presigned_url", "is_uploaded",
+            "is_converted", "created_at"
         ]
         read_only_fields = ["id", "uploaded_by", "size_bytes", "is_uploaded", "created_at"]
+
+    def get_is_converted(self, obj):
+        if obj.resource_type != Resource.ResourceType.DOCUMENT:
+            return True
+        return bool(obj.converted_pdf_key)
 
     def get_presigned_url(self, obj):
         if not obj.is_uploaded:

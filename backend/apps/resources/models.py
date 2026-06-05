@@ -17,6 +17,7 @@ class Resource(BaseModel):
 
     class ResourceType(models.TextChoices):
         PDF = "PDF", "PDF"
+        DOCUMENT = "DOCUMENT", "Documento"
         PRESENTATION = "PRESENTATION", "Presentación"
         IMAGE = "IMAGE", "Imagen"
         ZIP = "ZIP", "ZIP / Comprimido"
@@ -53,6 +54,9 @@ class Resource(BaseModel):
     )
     # S3/MinIO object key (not public URL)
     file_key = models.CharField(max_length=1000)
+    # For DOCUMENT resources: S3/MinIO key of the PDF rendered from the original
+    # office/text file (via LibreOffice). Empty while converting or if it failed.
+    converted_pdf_key = models.CharField(max_length=1000, blank=True, default="")
     size_bytes = models.PositiveBigIntegerField(default=0)
     content_type = models.CharField(max_length=200, blank=True)
     # Pre-signed URL cache

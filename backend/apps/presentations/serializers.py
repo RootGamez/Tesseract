@@ -4,18 +4,28 @@ from .models import Presentation, PresentationSlide, PresentationAnnotation
 
 
 class PresentationSlideSerializer(serializers.ModelSerializer):
+    # Presigned URL so the browser can load the slide image from private storage.
+    image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = PresentationSlide
         fields = [
             "id",
             "index",
             "image_key",
+            "image_url",
             "thumbnail_key",
             "mime_type",
             "width",
             "height",
             "render_metadata",
         ]
+
+    def get_image_url(self, obj):
+        if not obj.image_key:
+            return None
+        from apps.resources.storage import generate_presigned_url
+        return generate_presigned_url(obj.image_key)
 
 
 class PresentationAnnotationSerializer(serializers.ModelSerializer):

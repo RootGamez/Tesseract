@@ -94,8 +94,8 @@ export const templatesService = {
   async reorderStages(templateId: string, stageIds: string[]): Promise<void> {
     await apiClient.patch(`/api/v1/sessions/templates/${templateId}/stages/reorder/`, { stage_ids: stageIds });
   },
-  // Persist an uploaded file (PDF/PPTX) as a reusable asset on a template stage.
-  async uploadFile(templateId: string, stageId: string, file: File, resourceType: 'PDF' | 'PRESENTATION'): Promise<any> {
+  // Persist an uploaded file (PDF/PPTX/document) as a reusable asset on a template stage.
+  async uploadFile(templateId: string, stageId: string, file: File, resourceType: 'PDF' | 'PRESENTATION' | 'DOCUMENT'): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('resource_type', resourceType);

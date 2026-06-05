@@ -6,8 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# LibreOffice (Writer/Calc/Impress) is used by Celery workers to render uploaded
+# documents and presentations to PDF/images. fonts-* avoids blank glyphs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev curl && \
+    gcc libpq-dev curl \
+    libreoffice-writer libreoffice-calc libreoffice-impress \
+    fonts-dejavu fonts-liberation && \
     rm -rf /var/lib/apt/lists/*
 
 ARG ENVIRONMENT=dev
