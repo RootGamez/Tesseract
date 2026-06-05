@@ -39,9 +39,29 @@ def run_office_convert(source_file_path: str, output_dir: str, fmt: str) -> None
     raise RuntimeError(f"Could not convert file with LibreOffice: {last_error}")
 
 
+def _rasterize_pdf(pdf_path: Path, output_dir: str, dpi: int = 150) -> list[Path]:
+    """Render every page of a PDF to a PNG using poppler's pdftoppm.
+
+    pdftoppm zero-pads page numbers based on the page count, so a lexical sort of
+    "slide-*.png" matches page order.
+    """
+    prefix = str(Path(output_dir) / "slide")
+    completed = subprocess.run(
+        ["pdftoppm", "-png", "-r", str(dpi), str(pdf_path), prefix],
+        capture_output=True, check=True, text=True,
+    )
+    logger.info("pdf_rasterize_ok", pages_prefix=prefix, stderr=completed.stderr)
+    return sorted(Path(output_dir).glob("slide-*.png"))
+
+
 def _convert_with_office(source_file_path: str, output_dir: str) -> list[Path]:
-    run_office_convert(source_file_path, output_dir, "png")
-    return sorted(Path(output_dir).glob("*.png"))
+    # Convert to PDF first (keeps every slide/page — unlike the PNG export filter,
+    # which only emits the first slide), then rasterize each page to an image.
+    run_office_convert(source_file_path, output_dir, "pdf")
+    pdfs = sorted(Path(output_dir).glob("*.pdf"))
+    if not pdfs:
+        raise RuntimeError("LibreOffice did not produce a PDF for rendering.")
+    return _rasterize_pdf(pdfs[0], output_dir)
 
 
 def _store_slide_image(presentation_id: str, slide_index: int, image_path: Path) -> tuple[str, int, int, str]:
