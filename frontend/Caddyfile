@@ -1,0 +1,11 @@
+# Servidor de estáticos del SPA. ":80" (sin hostname) evita que Caddy intente
+# gestionar TLS automáticamente — eso lo hace Nginx Proxy Manager por delante.
+:80 {
+	root * /srv
+	encode gzip
+
+	# Fallback del router de React: cualquier ruta que no sea un archivo real
+	# devuelve index.html para que el routing del lado cliente funcione.
+	try_files {path} /index.html
+	file_server
+}

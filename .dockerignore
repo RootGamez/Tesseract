@@ -1,0 +1,19 @@
+# Contexto de build de Nginx (raíz). Mantén fuera lo pesado/irrelevante para que
+# `COPY frontend/ ./` no sobreescriba el node_modules recién instalado ni infle
+# el contexto.
+**/node_modules/
+**/dist/
+**/.vite/
+**/__pycache__/
+**/*.py[cod]
+.git/
+.github/
+backend/
+*.md
+repomix-output.xml
+*.docx
+.env
+.env.*
+!.env.prod.example
+**/.pytest_cache/
+**/.mypy_cache/

@@ -1,0 +1,36 @@
+# ── Secretos / entorno ────────────────────────────────────────────────────────
+# NUNCA comitear archivos de entorno con valores reales.
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# ── Python / Django ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+*.sqlite3
+backend/staticfiles/
+backend/media/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+.vite/
+*.log
+
+# ── Docker / build ────────────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Sistema operativo / editor ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

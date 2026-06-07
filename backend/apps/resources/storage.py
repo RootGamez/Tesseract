@@ -16,7 +16,13 @@ def _get_s3_client(endpoint_url: str | None = None):
     kwargs = {
         "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
         "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
-        "config": Config(signature_version="s3v4"),
+        # path-style ("host/bucket/key") es obligatorio con MinIO detrás de un
+        # dominio propio (p. ej. s3.<dominio>). Sin esto boto3 elegiría
+        # virtual-host-style (<bucket>.s3.<dominio>) y la URL no resolvería.
+        "config": Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+        ),
     }
     endpoint = endpoint_url or getattr(settings, "AWS_S3_ENDPOINT_URL", None)
     if endpoint:

@@ -1,0 +1,169 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Tesseract — Stack de PRODUCCIÓN
+#
+# Levanta backend (Django/Daphne + Celery), frontend (SPA estático) e
+# infraestructura (PostgreSQL, Redis, MinIO/S3). El reverse proxy y la
+# terminación TLS los gestiona Nginx Proxy Manager (NPM) por delante: este
+# compose NO incluye nginx. NPM enruta, en un único dominio:
+#     <dominio>/         → frontend (servicio "frontend", :80)
+#     <dominio>/api      → backend  (servicio "web", :8000)   [sin subdominio]
+#     <dominio>/ws       → backend  (servicio "web", :8000)   (WebSockets)
+#     <dominio>/admin    → backend  (servicio "web", :8000)
+#     <dominio>/static   → backend  (servicio "web", :8000)   (WhiteNoise)
+#     s3.<dominio>       → minio    (servicio "minio", :9000) (S3-compatible)
+#
+# Los servicios públicos (frontend, web, minio) se conectan a la red externa de
+# NPM (PROXY_NETWORK) para que NPM los alcance por nombre de servicio.
+#
+# Uso:
+#     cp .env.prod.example .env.prod      # rellena tus valores reales
+#     docker network create npm_proxy     # (o reutiliza la red que ya usa NPM)
+#     docker compose --env-file .env.prod up -d --build
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ─── PostgreSQL ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── MinIO (S3 compatible) ───────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file: .env.prod
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # MinIO genera URLs/redirecciones públicas con este dominio (s3.<dominio>).
+      MINIO_SERVER_URL: ${MINIO_PUBLIC_URL}
+    volumes:
+      - minio_data:/data
+    networks: [internal, proxy]
+
+  # ─── MinIO init: crea el bucket de la app ────────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    env_file: .env.prod
+    networks: [internal]
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do
+        echo 'esperando a MinIO...'; sleep 2;
+      done;
+      mc mb --ignore-existing local/$${MINIO_BUCKET_NAME};
+      echo 'Bucket listo: '$${MINIO_BUCKET_NAME};
+      "
+    restart: "no"
+
+  # ─── Backend Django / Daphne (ASGI: HTTP + WebSocket) ────────────────────────
+  web:
+    build:
+      context: ./backend
+      args:
+        ENVIRONMENT: prod
+    restart: unless-stopped
+    command: bash /app/entrypoint.prod.sh
+    env_file: .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    volumes:
+      - static_data:/app/staticfiles
+    networks: [internal, proxy]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  # ─── Celery Worker ───────────────────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: ./backend
+      args:
+        ENVIRONMENT: prod
+    restart: unless-stopped
+    command: celery -A config.celery_app worker --loglevel=info -c 4
+    env_file: .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    networks: [internal]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Celery Beat (scheduler) ─────────────────────────────────────────────────
+  celery_beat:
+    build:
+      context: ./backend
+      args:
+        ENVIRONMENT: prod
+    restart: unless-stopped
+    command: celery -A config.celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file: .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    networks: [internal]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Frontend (SPA estático servido por Caddy) ───────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_WS_URL: ${VITE_WS_URL}
+    restart: unless-stopped
+    networks: [proxy]
+
+networks:
+  # Red interna privada (BD, Redis, MinIO, backend, Celery).
+  internal:
+  # Red de Nginx Proxy Manager. Créala con `docker network create npm_proxy` o
+  # reutiliza la que ya usa tu NPM (ajusta PROXY_NETWORK en .env.prod).
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-npm_proxy}
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  static_data:

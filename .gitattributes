@@ -1,0 +1,4 @@
+# Los scripts de shell deben usar saltos de línea LF aunque se editen en Windows;
+# de lo contrario fallan dentro de los contenedores Linux (bash: bad interpreter).
+*.sh text eol=lf
+entrypoint.prod.sh text eol=lf
