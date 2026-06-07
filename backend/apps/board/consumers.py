@@ -320,10 +320,13 @@ class BoardConsumer(AsyncWebsocketConsumer):
             ).first()
             if not snapshot:
                 if target_stage.initial_board_state:
-                    app_state = target_stage.initial_board_state.get("appState", {}) or {}
-                    files = app_state.get("files", {}) if isinstance(app_state, dict) else {}
+                    ibs = target_stage.initial_board_state
+                    app_state = ibs.get("appState", {}) or {}
+                    files = ibs.get("files")
+                    if not files and isinstance(app_state, dict):
+                        files = app_state.get("files", {})
                     return {
-                        "elements": target_stage.initial_board_state.get("elements", []) or [],
+                        "elements": ibs.get("elements", []) or [],
                         "appState": app_state,
                         "files": files or {},
                     }
