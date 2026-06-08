@@ -66,7 +66,11 @@ const AUTH_CLOSE_CODES = new Set([4001, 4003]);
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useWebSocket(sessionId: string | null, role: 'student' | 'instructor' = 'student') {
+export function useWebSocket(
+  sessionId: string | null,
+  role: 'student' | 'instructor' = 'student',
+  mode: 'live' | 'replay' = 'live',
+) {
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
 
@@ -83,8 +87,10 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
   // Keep mutable values in refs so stable callbacks always see the latest
   const sessionIdRef = useRef(sessionId);
   const roleRef = useRef(role);
+  const modeRef = useRef(mode);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { roleRef.current = role; }, [role]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   // ── Zustand action selectors ────────────────────────────────────────────────
   const setSceneState         = useSceneStore((s) => s.setSceneState);
@@ -138,7 +144,9 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
 
     switch (event) {
       case 'SESSION_STATE':
-        if (payload.current_stage) {
+        // In replay/review mode the student drives navigation locally, so we
+        // ignore the server's current_stage and never auto-switch the scene.
+        if (payload.current_stage && modeRef.current === 'live') {
           a.setSceneState({
             activeScene: payload.current_stage.stage_type,
             stageData: payload.current_stage.config,
@@ -163,6 +171,8 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         break;
 
       case 'STAGE_CHANGED':
+        // Instructor-driven scene switch — ignored in replay (no live instructor).
+        if (modeRef.current !== 'live') break;
         a.setSceneState({ activeScene: payload.type, stageData: payload.data });
         upsertStage(payload.stage_id, payload.type, payload.data?.title);
         useOrchestratorStore.getState().setActiveStage(payload.stage_id);

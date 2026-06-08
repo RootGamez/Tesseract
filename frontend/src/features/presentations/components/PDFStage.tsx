@@ -14,13 +14,15 @@ interface PDFStageProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   localFileUrl?: string;
+  /** Self-paced review of a finished class: hide the "go to teacher's page" sync UI. */
+  reviewMode?: boolean;
 }
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 8;
 const ZOOM_STEP = 1.15;
 
-export default function PDFStage({ sessionId, role, activeStageId, currentPage: controlledPage, onPageChange, localFileUrl }: PDFStageProps) {
+export default function PDFStage({ sessionId, role, activeStageId, currentPage: controlledPage, onPageChange, localFileUrl, reviewMode = false }: PDFStageProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
@@ -47,7 +49,7 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
   const [userPage,    setUserPage]    = useState(1);
 
   const localPage   = role === 'instructor' ? (controlledPage ?? 1) : userPage;
-  const isOutOfSync = role === 'student' && userPage !== teacherPage;
+  const isOutOfSync = role === 'student' && !reviewMode && userPage !== teacherPage;
 
   // Ref para que el ResizeObserver lea la página actual sin recrearse en cada cambio.
   const localPageRef = useRef(localPage);

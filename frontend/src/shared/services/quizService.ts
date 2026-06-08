@@ -55,6 +55,17 @@ export const quizService = {
     }));
   },
 
+  /**
+   * Final scoreboard for a session — every student who earned points, ranked.
+   * Used to review the results of a finished class.
+   */
+  async getLeaderboard(sessionId: string): Promise<{ display_name: string; points: number; rank: number }[]> {
+    const { data } = await apiClient.get<{ leaderboard: any[] }>(
+      `/api/v1/gamification/sessions/${sessionId}/leaderboard/`,
+    );
+    return data?.leaderboard ?? [];
+  },
+
   // Library/Database operations for saved quizzes
   async listSavedQuizzes(): Promise<any[]> {
     const { data } = await apiClient.get<any>('/api/v1/gamification/quizzes/');
