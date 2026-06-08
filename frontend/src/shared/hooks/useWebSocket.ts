@@ -329,6 +329,12 @@ export function useWebSocket(sessionId: string | null, role: 'student' | 'instru
         console.log('[Quiz] Results received:', payload);
         window.dispatchEvent(new CustomEvent('quiz-results', { detail: payload }));
         break;
+      case 'QUIZ_REVEAL':
+        window.dispatchEvent(new CustomEvent('quiz-reveal', { detail: payload }));
+        break;
+      case 'QUIZ_FINISHED':
+        window.dispatchEvent(new CustomEvent('quiz-finished', { detail: payload }));
+        break;
       case 'PDF_PAGE_CHANGED':
         window.dispatchEvent(new CustomEvent('pdf-page-changed', { detail: payload }));
         break;

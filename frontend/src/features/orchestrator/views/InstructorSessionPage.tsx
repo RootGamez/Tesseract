@@ -748,6 +748,7 @@ export default function InstructorSessionPage() {
                 onLaunchQuestion={handleLaunchQuizQuestion}
                 quizLaunched={quizLaunched}
                 quizQuestionIndex={quizQuestionIndex}
+                sendMessage={sendMessage}
               />
             ) : (
               <motion.div

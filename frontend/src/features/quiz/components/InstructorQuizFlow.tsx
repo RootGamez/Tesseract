@@ -2,13 +2,18 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Plus, Trophy, ChevronRight, CheckCircle2,
-  RotateCcw, Users, Clock, Zap, Play, Edit2,
+  RotateCcw, Users, Clock, Zap, Play, Edit2, Eye, Flag,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { quizService } from '@/shared/services/quizService';
 import { useQuizStore, type Question } from '../store/useQuizStore';
 import QuizEditor from './QuizEditor';
 import InstructorQuizMonitor from './InstructorQuizMonitor';
+import QuizPodium from './QuizPodium';
+import { quizSound } from '@/shared/lib/quizSounds';
+import type { QuizFinishedPayload } from '../types';
+
+type ChannelType = 'sessions' | 'chat' | 'board' | 'presentations' | 'gamification';
 
 interface Participant {
   id: string;
@@ -25,6 +30,7 @@ interface InstructorQuizFlowProps {
   onLaunchQuestion: (index: number) => void;
   quizLaunched: boolean;
   quizQuestionIndex: number;
+  sendMessage: (channel: ChannelType, event: string, payload: any) => void;
 }
 
 type FlowStep = 'select' | 'preview' | 'editing' | 'live';
@@ -45,6 +51,7 @@ export default function InstructorQuizFlow({
   onLaunchQuestion,
   quizLaunched,
   quizQuestionIndex,
+  sendMessage,
 }: InstructorQuizFlowProps) {
   const [step, setStep] = useState<FlowStep>('select');
   const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
@@ -52,6 +59,8 @@ export default function InstructorQuizFlow({
   const [selectedQuiz, setSelectedQuiz] = useState<any | null>(null);
   const [loadedQuestions, setLoadedQuestions] = useState<Question[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<any | null>(null);
+  const [revealedQid, setRevealedQid] = useState<string | null>(null);
+  const [finished, setFinished] = useState<QuizFinishedPayload | null>(null);
 
   const { questions: storeQuestions } = useQuizStore();
 
@@ -66,6 +75,13 @@ export default function InstructorQuizFlow({
   useEffect(() => {
     if (quizLaunched) setStep('live');
   }, [quizLaunched]);
+
+  // The instructor screen also shows the final podium when the quiz ends.
+  useEffect(() => {
+    const onFinished = (e: Event) => setFinished((e as CustomEvent<QuizFinishedPayload>).detail);
+    window.addEventListener('quiz-finished', onFinished);
+    return () => window.removeEventListener('quiz-finished', onFinished);
+  }, []);
 
   const handleSelectSaved = async (quiz: any) => {
     setIsLoading(true);
@@ -133,24 +149,44 @@ export default function InstructorQuizFlow({
     const liveQ = buildLiveQuestion(index);
     if (!liveQ) return;
     setActiveQuestion(liveQ);
+    setRevealedQid(null);
+    setFinished(null);
     // Also dispatch for students via WebSocket echo
     window.dispatchEvent(new CustomEvent('quiz-launched', { detail: liveQ }));
     onLaunchQuestion(index);
   };
 
   const handleStartQuiz = () => {
+    quizSound.unlock();
     const liveQ = buildLiveQuestion(0);
     if (!liveQ) return;
     setActiveQuestion(liveQ);
+    setRevealedQid(null);
+    setFinished(null);
     window.dispatchEvent(new CustomEvent('quiz-launched', { detail: liveQ }));
     onLaunchQuestion(0);
     setStep('live');
+  };
+
+  // Close the active question → server reveals the answer, scores & leaderboard.
+  const revealCurrent = () => {
+    if (!activeQuestion || revealedQid === activeQuestion.question_id) return;
+    sendMessage('gamification', 'QUIZ_CLOSE', { question_id: activeQuestion.question_id });
+    setRevealedQid(activeQuestion.question_id);
+  };
+
+  // End the whole quiz → server broadcasts the final ranking / podium.
+  const finishQuiz = () => {
+    sendMessage('gamification', 'QUIZ_FINISH', { total_questions: questions.length });
   };
 
   const handleReset = () => {
     setStep('select');
     setSelectedQuiz(null);
     setLoadedQuestions([]);
+    setActiveQuestion(null);
+    setRevealedQid(null);
+    setFinished(null);
   };
 
   const questions = loadedQuestions.length > 0 ? loadedQuestions : storeQuestions;
@@ -395,55 +431,80 @@ export default function InstructorQuizFlow({
             transition={{ duration: 0.2 }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            {/* Barra de controles */}
-            <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border bg-card min-h-[44px]">
-              {/* Indicador */}
-              <span className="text-xs text-muted-foreground font-mono shrink-0">
-                Preg. {quizQuestionIndex + 1} / {questions.length}
-              </span>
-
-              <div className="flex-1" />
-
-              {/* Nuevo quiz */}
-              <button
-                onClick={handleReset}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-muted shrink-0"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">Nuevo</span>
-              </button>
-
-              {/* Relanzar la pregunta actual */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-2.5 shrink-0"
-                onClick={() => launchQuestion(quizQuestionIndex)}
-              >
-                Relanzar
-              </Button>
-
-              {/* Siguiente pregunta — solo si no es la última */}
-              {quizQuestionIndex + 1 < questions.length ? (
-                <Button
-                  size="sm"
-                  className="h-7 text-xs sidebar-gradient border-0 text-white px-3 shrink-0"
-                  onClick={() => launchQuestion(quizQuestionIndex + 1)}
-                >
-                  Preg. {quizQuestionIndex + 2} →
-                </Button>
-              ) : (
-                <span className="text-xs text-muted-foreground px-2 shrink-0">✓ Último</span>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-hidden">
-              <InstructorQuizMonitor
-                participants={participants}
-                quizLaunched={quizLaunched}
-                activeQuestion={activeQuestion}
+            {finished ? (
+              <QuizPodium
+                entries={finished.leaderboard ?? []}
+                onReplay={handleReset}
               />
-            </div>
+            ) : (() => {
+              const isRevealed = !!activeQuestion && revealedQid === activeQuestion.question_id;
+              const isLast = quizQuestionIndex + 1 >= questions.length;
+              return (
+                <>
+                  {/* Barra de controles */}
+                  <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border bg-card min-h-[44px]">
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">
+                      Preg. {quizQuestionIndex + 1} / {questions.length}
+                    </span>
+
+                    <div className="flex-1" />
+
+                    <button
+                      onClick={handleReset}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-muted shrink-0"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span className="hidden sm:inline">Nuevo</span>
+                    </button>
+
+                    {/* Revelar respuesta (cierra la pregunta y puntúa) */}
+                    {!isRevealed ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2.5 gap-1.5 shrink-0 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+                        onClick={revealCurrent}
+                      >
+                        <Eye className="w-3 h-3" /> Revelar
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-emerald-600 font-semibold px-1.5 shrink-0 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Revelado
+                      </span>
+                    )}
+
+                    {/* Siguiente pregunta / Finalizar */}
+                    {!isLast ? (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs sidebar-gradient border-0 text-white px-3 shrink-0"
+                        onClick={() => launchQuestion(quizQuestionIndex + 1)}
+                      >
+                        Preg. {quizQuestionIndex + 2} →
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-amber-500 hover:bg-amber-600 border-0 text-white px-3 gap-1.5 shrink-0"
+                        onClick={finishQuiz}
+                      >
+                        <Flag className="w-3 h-3" /> Finalizar
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="flex-1 overflow-hidden">
+                    <InstructorQuizMonitor
+                      participants={participants}
+                      quizLaunched={quizLaunched}
+                      activeQuestion={activeQuestion}
+                      revealed={isRevealed}
+                      onTimeUp={revealCurrent}
+                    />
+                  </div>
+                </>
+              );
+            })()}
           </motion.div>
         )}
       </AnimatePresence>
