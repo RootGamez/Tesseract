@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { Excalidraw, reconcileElements } from '@excalidraw/excalidraw';
+import { Excalidraw, reconcileElements, useHandleLibrary } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import throttle from 'lodash.throttle';
 import { useSceneStore } from '@/features/student/store/sceneStore';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
+import { libraryAdapter, loadDefaultLibraries } from '../lib/libraryStorage';
 
 interface BoardWrapperProps {
   role: 'student' | 'instructor';
@@ -19,6 +20,16 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
   ({ role, sendMessage }, ref) => {
     const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
     const excalidrawAPIRef = useRef<any>(null);
+
+    // Habilita la importación de bibliotecas vía deep-link (#addLibrary=... al
+    // volver de libraries.excalidraw.com) y su persistencia en IndexedDB.
+    useHandleLibrary({ excalidrawAPI, adapter: libraryAdapter });
+
+    // Carga las bibliotecas por defecto la primera vez (si existen en /public/libraries).
+    useEffect(() => {
+      if (!excalidrawAPI) return;
+      loadDefaultLibraries(excalidrawAPI);
+    }, [excalidrawAPI]);
 
     // Track whether we've received the first SCENE_INIT for this mount.
     // We don't broadcast our own edits until we know the base scene.
@@ -351,6 +362,7 @@ const BoardWrapper = forwardRef<BoardWrapperHandle, BoardWrapperProps>(
           viewModeEnabled={isViewMode}
           theme="light"
           gridModeEnabled={false}
+          libraryReturnUrl={`${window.location.origin}${window.location.pathname}`}
           initialData={{ appState: { viewBackgroundColor: "#ffffff" } }}
         />
       </div>
