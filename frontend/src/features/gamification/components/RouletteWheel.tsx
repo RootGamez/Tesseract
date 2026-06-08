@@ -6,8 +6,11 @@ import { Button } from '@/shared/components/ui/button';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import { Input } from '@/shared/components/ui/input';
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar';
-import { Check, Search, Users, Trophy } from 'lucide-react';
+import { Check, Search, Users, Trophy, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
+import { quizSound } from '@/shared/lib/quizSounds';
+import { useQuizSound } from '@/shared/hooks/useQuizSound';
 
 interface Participant {
   id: string;
@@ -32,8 +35,6 @@ interface RouletteWheelProps {
   winnerName?: string | null;
 }
 
-const WHEEL_COLORS = ['#4f46e5', '#7c3aed'];
-
 export default function RouletteWheel({
   open,
   participants,
@@ -53,6 +54,15 @@ export default function RouletteWheel({
   const [searchQuery, setSearchQuery] = useState('');
   const [localWinner, setLocalWinner] = useState<string | null>(null);
 
+  // ── Colores del tema actual (claro/oscuro) ────────────────────────────────────
+  const theme = useThemeColors();
+  const { muted, toggle: toggleMute } = useQuizSound();
+  const wheelColors = useMemo(() => [theme.primary, theme.accent], [theme.primary, theme.accent]);
+  const wheelTextColors = useMemo(
+    () => [theme['primary-foreground'], theme['accent-foreground']],
+    [theme],
+  );
+
   // ── Participantes activos en la rueda ────────────────────────────────────────
   // Instructor: los seleccionados en la lista. Alumno: lo que llega por sync.
   const activeParticipants = useMemo(
@@ -64,9 +74,9 @@ export default function RouletteWheel({
     () =>
       activeParticipants.map((p, idx) => ({
         option: p.name.length > 16 ? `${p.name.slice(0, 15)}…` : p.name,
-        style: { backgroundColor: WHEEL_COLORS[idx % 2], textColor: '#ffffff' },
+        style: { backgroundColor: wheelColors[idx % 2], textColor: wheelTextColors[idx % 2] },
       })),
-    [activeParticipants],
+    [activeParticipants, wheelColors, wheelTextColors],
   );
 
   // ── Instructor: emitir la lista activa solo cuando cambia de verdad ───────────
@@ -97,6 +107,17 @@ export default function RouletteWheel({
     lastActiveKeyRef.current = key;
     onActiveParticipantsChange(active);
   }, [selectedIds, open, isStudent, participants, onActiveParticipantsChange]);
+
+  // ── Sonido: arrancar el giro (ambos roles) y limpiar al cerrar ────────────────
+  useEffect(() => {
+    if (mustStartSpinning) quizSound.rouletteStart();
+  }, [mustStartSpinning]);
+
+  useEffect(() => {
+    if (open) quizSound.unlock(); // prime audio si ya hubo un gesto del usuario
+    else quizSound.stopRoulette();
+    return () => quizSound.stopRoulette();
+  }, [open]);
 
   // ── Alumno: girar cuando llega un spinId nuevo (idempotente) ──────────────────
   const lastSpinIdRef = useRef<number | null>(null);
@@ -144,12 +165,15 @@ export default function RouletteWheel({
     const name = isStudent ? (winnerName ?? winner?.name ?? null) : (winner?.name ?? null);
     if (name) {
       setLocalWinner(name);
+      quizSound.rouletteWin();
       confetti({
         particleCount: 150,
         spread: 80,
         origin: { y: 0.6 },
-        colors: ['#4f46e5', '#7c3aed', '#ec4899', '#3b82f6', '#10b981'],
+        colors: [theme.primary, theme.accent, theme.foreground].filter((c) => c && c !== 'transparent'),
       });
+    } else {
+      quizSound.stopRoulette();
     }
     if (!isStudent && winner) onResult?.(winner.id);
   };
@@ -170,17 +194,26 @@ export default function RouletteWheel({
         onPointerDownOutside={(e) => isStudent && e.preventDefault()}
         onEscapeKeyDown={(e) => isStudent && e.preventDefault()}
         className={cn(
-          'bg-zinc-950/95 backdrop-blur-md border border-indigo-500/20 shadow-[0_0_50px_rgba(99,102,241,0.15)] text-zinc-100 transition-all duration-300',
+          'bg-background/95 backdrop-blur-md border border-border shadow-2xl text-foreground transition-all duration-300 max-h-[92vh] overflow-y-auto',
           isStudent
-            ? 'sm:max-w-[480px] w-[90vw] [&>button]:hidden p-6'
-            : 'sm:max-w-[800px] w-[95vw] md:max-w-[850px]',
+            ? 'w-[92vw] sm:max-w-[460px] [&>button]:hidden p-4 sm:p-6'
+            : 'w-[95vw] sm:max-w-[760px] lg:max-w-[860px] p-4 sm:p-6',
         )}
       >
+        {/* Silenciar / activar sonidos (también desbloquea el audio al pulsar) */}
+        <button
+          onClick={toggleMute}
+          title={muted ? 'Activar sonido' : 'Silenciar'}
+          className="absolute left-3 top-3 z-10 w-8 h-8 rounded-lg bg-muted hover:bg-muted/70 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
+
         <DialogHeader>
-          <DialogTitle className="text-2xl font-extrabold tracking-tight text-center md:text-left bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-500 bg-clip-text text-transparent">
+          <DialogTitle className="text-xl sm:text-2xl font-extrabold tracking-tight text-center md:text-left bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
             {isStudent ? 'Sorteo en Vivo' : 'Ruleta de Participantes'}
           </DialogTitle>
-          <DialogDescription className="text-zinc-400 text-xs">
+          <DialogDescription className="text-muted-foreground text-xs text-center md:text-left">
             {isStudent
               ? 'El docente ha activado el sorteo de participación en tiempo real.'
               : 'Gira la rueda para seleccionar aleatoriamente a un estudiante. Selecciona a los estudiantes que deseas incluir en esta ronda.'}
@@ -189,27 +222,27 @@ export default function RouletteWheel({
 
         <div
           className={cn(
-            'flex gap-6 py-2 transition-all duration-300',
+            'flex gap-5 sm:gap-6 py-2 transition-all duration-300',
             isStudent ? 'flex-col items-center' : 'flex-col md:flex-row',
           )}
         >
           {/* Panel izquierdo: selección de participantes (solo instructor) */}
           {!isStudent && (
-            <div className="w-full md:w-72 flex flex-col gap-3 shrink-0">
+            <div className="w-full md:w-64 lg:w-72 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-indigo-400" />
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-primary" />
                   Estudiantes ({selectedIds.length}/{participants.length})
                 </h3>
               </div>
 
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   placeholder="Buscar estudiante..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 h-9 text-xs bg-zinc-900 border-zinc-800 focus-visible:ring-indigo-500 text-zinc-100"
+                  className="pl-8 h-9 text-xs"
                   disabled={mustStartSpinning}
                 />
               </div>
@@ -218,7 +251,7 @@ export default function RouletteWheel({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 text-[11px] h-8 bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800 hover:text-white"
+                  className="flex-1 text-[11px] h-8"
                   onClick={() => setSelectedIds(participants.map((p) => p.id))}
                   disabled={mustStartSpinning || selectedIds.length === participants.length}
                 >
@@ -227,7 +260,7 @@ export default function RouletteWheel({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 text-[11px] h-8 bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800 hover:text-white"
+                  className="flex-1 text-[11px] h-8"
                   onClick={() => setSelectedIds([])}
                   disabled={mustStartSpinning || selectedIds.length === 0}
                 >
@@ -235,7 +268,7 @@ export default function RouletteWheel({
                 </Button>
               </div>
 
-              <ScrollArea className="h-[280px] border border-zinc-800 rounded-lg p-1 bg-zinc-950/40">
+              <ScrollArea className="h-[200px] md:h-[280px] border border-border rounded-lg p-1 bg-card/40">
                 {filteredParticipants.length > 0 ? (
                   <div className="space-y-0.5">
                     {filteredParticipants.map((p) => {
@@ -252,19 +285,19 @@ export default function RouletteWheel({
                           }
                           className={cn(
                             'w-full flex items-center justify-between p-2 rounded-md transition-colors text-left text-xs',
-                            isSelected ? 'hover:bg-zinc-800/50' : 'opacity-40 hover:bg-zinc-900',
+                            isSelected ? 'hover:bg-muted' : 'opacity-40 hover:bg-muted/50',
                           )}
                         >
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <Avatar className="h-7 w-7 shrink-0">
-                              <AvatarFallback className="text-[10px] bg-indigo-600 text-white font-bold">
+                              <AvatarFallback className="text-[10px] bg-primary text-primary-foreground font-bold">
                                 {p.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">
-                              <p className="font-medium truncate text-zinc-200">{p.name}</p>
+                              <p className="font-medium truncate text-foreground">{p.name}</p>
                               {isUsed && (
-                                <span className="text-[8px] text-zinc-400 bg-zinc-800 px-1 py-0.2 rounded font-mono">
+                                <span className="text-[8px] text-muted-foreground bg-muted px-1 py-0.2 rounded font-mono">
                                   Ya participó
                                 </span>
                               )}
@@ -272,11 +305,11 @@ export default function RouletteWheel({
                           </div>
                           <div className="shrink-0 ml-2">
                             {isSelected ? (
-                              <div className="w-4 h-4 rounded border border-indigo-500 bg-indigo-600 text-white flex items-center justify-center">
-                                <Check className="w-3 h-3 text-white stroke-[3px]" />
+                              <div className="w-4 h-4 rounded border border-primary bg-primary text-primary-foreground flex items-center justify-center">
+                                <Check className="w-3 h-3 stroke-[3px]" />
                               </div>
                             ) : (
-                              <div className="w-4 h-4 rounded border border-zinc-700 bg-zinc-900" />
+                              <div className="w-4 h-4 rounded border border-border bg-card" />
                             )}
                           </div>
                         </button>
@@ -284,7 +317,7 @@ export default function RouletteWheel({
                     })}
                   </div>
                 ) : (
-                  <p className="text-xs text-zinc-500 text-center py-10">No se encontraron estudiantes</p>
+                  <p className="text-xs text-muted-foreground text-center py-10">No se encontraron estudiantes</p>
                 )}
               </ScrollArea>
             </div>
@@ -293,45 +326,50 @@ export default function RouletteWheel({
           {/* Panel derecho: la rueda */}
           <div
             className={cn(
-              'flex-1 flex flex-col items-center justify-center gap-4 py-2 min-h-[320px] transition-all',
-              !isStudent && 'border-l border-zinc-800/60 pl-6',
+              'flex-1 flex flex-col items-center justify-center gap-4 py-2 min-h-[300px] w-full min-w-0 transition-all',
+              !isStudent && 'md:border-l border-border md:pl-6',
             )}
           >
             {isStudent && (
               <div className="text-center mb-1">
-                <p className="text-xs text-zinc-400 font-semibold tracking-wider uppercase">
+                <p className="text-xs text-muted-foreground font-semibold tracking-wider uppercase">
                   {mustStartSpinning ? '¡Girando la ruleta!' : localWinner ? 'Tenemos un ganador' : 'Esperando sorteo...'}
                 </p>
               </div>
             )}
 
             {activeParticipants.length > 0 ? (
-              <div className="flex flex-col items-center gap-4">
-                <div className="scale-90 sm:scale-100 origin-center max-w-full overflow-hidden flex items-center justify-center p-2 rounded-full bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.15)]">
+              <div className="flex flex-col items-center gap-4 w-full">
+                <div
+                  className="roulette-fit w-full max-w-[260px] sm:max-w-[320px] md:max-w-[360px] mx-auto p-2 rounded-full border border-primary/15"
+                  style={{
+                    background: `radial-gradient(circle, ${theme.primary}1a, transparent 70%)`,
+                  }}
+                >
                   <Wheel
                     mustStartSpinning={mustStartSpinning}
                     prizeNumber={prizeNumber}
                     data={data}
-                    backgroundColors={WHEEL_COLORS}
-                    textColors={['#ffffff', '#ffffff']}
-                    outerBorderColor="#1e1b4b"
+                    backgroundColors={wheelColors}
+                    textColors={wheelTextColors}
+                    outerBorderColor={theme.border}
                     outerBorderWidth={6}
                     innerRadius={15}
-                    innerBorderColor="#09090b"
+                    innerBorderColor={theme.card}
                     innerBorderWidth={5}
-                    radiusLineColor="#1e1b4b"
+                    radiusLineColor={theme.border}
                     radiusLineWidth={1.5}
                     onStopSpinning={handleStopSpinning}
                   />
                 </div>
 
                 {localWinner && (
-                  <div className="w-full max-w-[280px] p-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 shadow-[0_0_20px_rgba(99,102,241,0.1)] text-center animate-pulse">
-                    <div className="flex items-center justify-center gap-1.5 text-xs text-indigo-300 font-medium mb-0.5">
-                      <Trophy className="w-3.5 h-3.5 text-yellow-500" />
+                  <div className="w-full max-w-[280px] p-3 rounded-xl border border-primary/30 bg-primary/10 text-center animate-pulse">
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-primary font-medium mb-0.5">
+                      <Trophy className="w-3.5 h-3.5 text-amber-500" />
                       ¡Estudiante Seleccionado!
                     </div>
-                    <div className="text-base font-extrabold bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent truncate">
+                    <div className="text-base font-extrabold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent truncate">
                       {localWinner}
                     </div>
                   </div>
@@ -341,7 +379,7 @@ export default function RouletteWheel({
                   <Button
                     onClick={startSpin}
                     disabled={mustStartSpinning || activeParticipants.length === 0}
-                    className="mt-2 w-44 py-5 font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.55)] border-0 transition-all duration-300 rounded-xl"
+                    className="mt-2 w-44 py-5 font-bold text-sm sidebar-gradient text-white border-0 shadow-lg hover:opacity-95 transition-all duration-300 rounded-xl"
                   >
                     {mustStartSpinning ? 'Girando…' : 'Girar Ruleta'}
                   </Button>
@@ -349,8 +387,8 @@ export default function RouletteWheel({
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3 text-center max-w-[260px] py-10">
-                <Users className="w-10 h-10 text-zinc-700 animate-pulse" />
-                <p className="text-xs text-zinc-500 leading-relaxed">
+                <Users className="w-10 h-10 text-muted-foreground/40 animate-pulse" />
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {isStudent
                     ? 'Esperando que el instructor agregue participantes a la ruleta...'
                     : 'Selecciona al menos un estudiante de la lista lateral para activar la ruleta.'}
@@ -362,12 +400,8 @@ export default function RouletteWheel({
 
         {/* Footer (solo instructor): puede cerrar incluso girando → cierra también al alumno */}
         {!isStudent && (
-          <DialogFooter className="border-t border-zinc-800/80 pt-4">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-            >
+          <DialogFooter className="border-t border-border pt-4">
+            <Button variant="outline" onClick={onClose}>
               Cerrar
             </Button>
           </DialogFooter>

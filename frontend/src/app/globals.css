@@ -107,4 +107,20 @@
   .scrollbar-thin::-webkit-scrollbar { width: 4px; }
   .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 2px; }
+
+  /* react-custom-roulette sizes itself to 80vw by default, ignoring its
+     container. Force it to fill the wrapper instead so we can size the wheel
+     responsively (the wrapper width is controlled in RouletteWheel.tsx). */
+  .roulette-fit > div {
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    aspect-ratio: 1 / 1;
+    /* The wheel is a square canvas that rotates; a rotating square's bounding
+       box grows/shrinks with the angle, which would toggle the dialog's
+       scrollbar every frame. The visible wheel is a circle inscribed in the
+       square, so clipping the (empty) corners removes the jitter losslessly. */
+    overflow: hidden;
+  }
 }

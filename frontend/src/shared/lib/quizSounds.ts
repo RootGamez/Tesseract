@@ -42,6 +42,7 @@ class QuizSoundEngine {
   private muted: boolean;
   private listeners = new Set<(muted: boolean) => void>();
   private lobbyTimer: ReturnType<typeof setInterval> | null = null;
+  private rouletteTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     let stored = false;
@@ -257,8 +258,39 @@ class QuizSoundEngine {
     this.noiseBurst(0.3, 0.18, 0.6);
   }
 
+  // ── Roulette cues ─────────────────────────────────────────────────────────────
+
+  /** Wind-up whoosh + a clicker train that decelerates while the wheel spins. */
+  rouletteStart() {
+    if (this.muted) return;
+    this.stopRoulette();
+    this.slide(NOTE.C5, NOTE.C6, 0.28, 'sawtooth', 0.14); // wind-up
+    let interval = 55;
+    const tick = () => {
+      this.tone({ freq: NOTE.G5, type: 'square', duration: 0.025, gain: 0.11 });
+      interval = Math.min(interval * 1.07, 420);
+      this.rouletteTimer = setTimeout(tick, interval);
+    };
+    this.rouletteTimer = setTimeout(tick, interval);
+  }
+
+  stopRoulette() {
+    if (this.rouletteTimer) {
+      clearTimeout(this.rouletteTimer);
+      this.rouletteTimer = null;
+    }
+  }
+
+  /** The wheel landed on a winner — final click + celebratory fanfare. */
+  rouletteWin() {
+    this.stopRoulette();
+    this.tone({ freq: NOTE.C6, type: 'square', duration: 0.05, gain: 0.16 });
+    this.fanfare();
+  }
+
   stopAll() {
     this.stopLobby();
+    this.stopRoulette();
   }
 }
 
