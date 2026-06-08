@@ -13,6 +13,7 @@ Todos los valores específicos del dominio se inyectan por variables de entorno
 (ver .env.prod.example). El almacenamiento (MinIO vs AWS S3) lo decide USE_S3,
 evaluada en base.py. Por defecto se usa el MinIO embebido en el compose.
 """
+import os
 from .base import *  # noqa
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
@@ -69,8 +70,9 @@ if SENTRY_DSN:  # noqa: F405
 # ── Email ─────────────────────────────────────────────────────────────────────
 # Usa Anymail/SendGrid sólo si hay API key; en caso contrario conserva el backend
 # heredado de base.py (consola) para no romper el arranque sin credenciales.
-if SENDGRID_API_KEY:  # noqa: F405
+_SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
+if _SENDGRID_API_KEY:
     EMAIL_BACKEND = "anymail.backends.sendgrid.EmailBackend"
     ANYMAIL = {
-        "SENDGRID_API_KEY": SENDGRID_API_KEY,  # noqa: F405
+        "SENDGRID_API_KEY": _SENDGRID_API_KEY,
     }

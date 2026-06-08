@@ -14,6 +14,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN npm run build
 
 # ─── Stage 2: servidor de estáticos (Caddy, sólo file server) ─────────────────
