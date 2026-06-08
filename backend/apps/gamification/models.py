@@ -85,6 +85,8 @@ class QuizQuestion(BaseModel):
         max_length=10, choices=Difficulty.choices, default=Difficulty.MEDIUM
     )
     duration_seconds = models.PositiveIntegerField(default=30)
+    # Max points for this question answered instantly (Kahoot-style). RF-GAME-05.
+    points_base = models.PositiveIntegerField(default=1000)
     # State
     is_launched = models.BooleanField(default=False)
     launched_at = models.DateTimeField(null=True, blank=True)
@@ -117,6 +119,9 @@ class QuizResponse(BaseModel):
     )
     answer = models.CharField(max_length=1000)
     is_correct = models.BooleanField(null=True, blank=True)
+    # Kahoot-style scoring (RF-GAME-05): time taken to answer and points earned.
+    response_time_ms = models.PositiveIntegerField(null=True, blank=True)
+    points_awarded = models.IntegerField(default=0)
     answered_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

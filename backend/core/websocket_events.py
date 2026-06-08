@@ -34,6 +34,10 @@ ROULETTE_CLOSE = "ROULETTE_CLOSE"
 QUIZ_LAUNCHED = "QUIZ_LAUNCHED"
 QUIZ_RESULTS = "QUIZ_RESULTS"
 QUIZ_RESPONSE = "QUIZ_RESPONSE"
+QUIZ_CLOSE = "QUIZ_CLOSE"        # instructor → server: close question, reveal answer
+QUIZ_REVEAL = "QUIZ_REVEAL"      # server → all: correct answer + scores + leaderboard
+QUIZ_FINISH = "QUIZ_FINISH"      # instructor → server: end the whole quiz
+QUIZ_FINISHED = "QUIZ_FINISHED"  # server → all: final podium / ranking
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 CHAT_MESSAGE = "CHAT_MESSAGE"

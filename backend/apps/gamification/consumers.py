@@ -18,6 +18,7 @@ from django.core.cache import cache
 from core.websocket_events import (
     POINTS_AWARDED, EMOJI_FIRED, TIMER_STARTED, TIMER_PAUSED, TIMER_CANCELLED,
     SPINNER_RESULT, QUIZ_LAUNCHED, QUIZ_RESULTS, QUIZ_RESPONSE, WS_ERROR,
+    QUIZ_CLOSE, QUIZ_REVEAL, QUIZ_FINISH, QUIZ_FINISHED,
     ROULETTE_OPEN, ROULETTE_SPIN, ROULETTE_CLOSE,
 )
 from core.throttling import EmojiRateLimit, WebSocketMessageThrottle
@@ -88,6 +89,10 @@ class GamificationConsumer(AsyncWebsocketConsumer):
                 await self._handle_timer_cancelled(payload)
             elif event_type == QUIZ_LAUNCHED:
                 await self._handle_quiz_launched(payload)
+            elif event_type == QUIZ_CLOSE:
+                await self._handle_quiz_close(payload)
+            elif event_type == QUIZ_FINISH:
+                await self._handle_quiz_finish(payload)
             elif event_type == ROULETTE_OPEN:
                 await self._handle_roulette_open(payload)
             elif event_type == ROULETTE_SPIN:
@@ -253,11 +258,14 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         )
 
     async def _handle_quiz_response(self, payload):
-        """RF-GAME-05: Record student answer."""
+        """RF-GAME-05: Record + score a student answer (Kahoot-style)."""
         question_id = payload.get("question_id")
         answer_index = payload.get("answer_index", payload.get("answer", ""))
-        await self._save_quiz_response(question_id, answer_index)
-        # Broadcast aggregated results to instructor group
+        client_ms = payload.get("response_time_ms")
+        await self._score_and_save_quiz_response(question_id, answer_index, client_ms)
+        # Broadcast live progress (counts + who answered, NOT correctness) so the
+        # instructor monitor updates in real time. Correctness stays hidden until
+        # the instructor closes the question (QUIZ_REVEAL).
         results = await self._get_quiz_results(question_id)
         await self.channel_layer.group_send(
             self.game_group,
@@ -265,6 +273,36 @@ class GamificationConsumer(AsyncWebsocketConsumer):
                 "type": "quiz.results",
                 "event": QUIZ_RESULTS,
                 "payload": results,
+            },
+        )
+
+    async def _handle_quiz_close(self, payload):
+        """RF-GAME-05: Instructor closes a question → reveal answer, scores & ranking."""
+        question_id = payload.get("question_id")
+        reveal = await self._build_reveal_payload(question_id)
+        if reveal is None:
+            await self.send(text_data=json.dumps({
+                "event": WS_ERROR,
+                "payload": {"message": "No se pudo revelar la pregunta."},
+            }))
+            return
+        await self.channel_layer.group_send(
+            self.game_group,
+            {"type": "quiz.reveal", "event": QUIZ_REVEAL, "payload": reveal},
+        )
+
+    async def _handle_quiz_finish(self, payload):
+        """RF-GAME-05: Instructor ends the quiz → final podium / ranking."""
+        ranking = await self._build_final_ranking()
+        await self.channel_layer.group_send(
+            self.game_group,
+            {
+                "type": "quiz.finished",
+                "event": QUIZ_FINISHED,
+                "payload": {
+                    "leaderboard": ranking,
+                    "total_questions": payload.get("total_questions"),
+                },
             },
         )
 
@@ -323,6 +361,31 @@ class GamificationConsumer(AsyncWebsocketConsumer):
 
     async def quiz_results(self, event):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def quiz_reveal(self, event):
+        # Each connection gets the shared reveal plus its own personal slice ("you").
+        payload = self._personal_view(event["payload"])
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": payload}))
+
+    async def quiz_finished(self, event):
+        payload = self._personal_view(event["payload"])
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": payload}))
+
+    def _personal_view(self, payload: dict) -> dict:
+        """Inject this connection's own result/rank so each client knows where it stands."""
+        if not self.participant:
+            return payload
+        pid = str(self.participant.pk)
+        out = dict(payload)
+        out["you"] = next(
+            (r for r in payload.get("results", []) if r.get("participant_id") == pid),
+            None,
+        )
+        out["you_rank"] = next(
+            (e for e in payload.get("leaderboard", []) if e.get("participant_id") == pid),
+            None,
+        )
+        return out
 
     async def roulette_open(self, event):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
@@ -436,24 +499,196 @@ class GamificationConsumer(AsyncWebsocketConsumer):
         question.save(update_fields=["is_launched", "launched_at"])
 
     @database_sync_to_async
-    def _save_quiz_response(self, question_id: str, answer):
-        from apps.gamification.models import QuizQuestion, QuizResponse
+    def _score_and_save_quiz_response(self, question_id: str, answer, client_ms=None):
+        """
+        Persist a participant's answer and award Kahoot-style points atomically.
+
+        Scoring (correctness + speed + streak) is server-authoritative; clients
+        only send their choice. A participant may answer each question once —
+        later submissions for the same question are ignored.
+        """
+        from django.db import transaction
+        from apps.gamification.models import QuizQuestion, QuizResponse, PointEvent
+        from apps.gamification.scoring import compute_points
+
         participant = self.participant
         if not participant:
             logger.warning("quiz_response_no_participant", session_id=self.session_id)
             return
         try:
             question = QuizQuestion.objects.get(pk=question_id)
-            QuizResponse.objects.update_or_create(
-                question=question,
-                participant=participant,
-                defaults={"answer": str(answer)},
-            )
-            logger.info("quiz_response_saved", question_id=question_id, participant_id=str(participant.pk), answer=answer)
         except QuizQuestion.DoesNotExist:
             logger.warning("quiz_response_question_not_found", question_id=question_id)
-        except Exception as e:
+            return
+
+        # One answer per question — never re-score.
+        if QuizResponse.objects.filter(question=question, participant=participant).exists():
+            return
+
+        answer_index = self._coerce_index(answer)
+        correct_index = self._correct_index(question)
+        is_correct = answer_index is not None and answer_index == correct_index
+
+        # Response time: prefer the server-measured delta from launch; fall back to
+        # the client's self-reported value, then to the full duration (no speed bonus).
+        duration_ms = max(1, int(question.duration_seconds) * 1000)
+        if question.launched_at:
+            elapsed = (timezone.now() - question.launched_at).total_seconds() * 1000
+            response_time_ms = int(min(max(0, elapsed), duration_ms))
+        elif client_ms is not None:
+            response_time_ms = int(min(max(0, int(client_ms)), duration_ms))
+        else:
+            response_time_ms = duration_ms
+
+        prev_streak = self._current_correct_streak(participant, question)
+        streak = prev_streak + 1 if is_correct else 0
+        points = compute_points(
+            is_correct=is_correct,
+            response_time_ms=response_time_ms,
+            duration_seconds=question.duration_seconds,
+            base_points=question.points_base or 1000,
+            streak=streak,
+        )
+
+        try:
+            with transaction.atomic():
+                QuizResponse.objects.create(
+                    question=question,
+                    participant=participant,
+                    answer=str(answer_index if answer_index is not None else answer),
+                    is_correct=is_correct,
+                    response_time_ms=response_time_ms,
+                    points_awarded=points,
+                )
+                if points:
+                    PointEvent.objects.create(
+                        session_id=self.session_id,
+                        participant=participant,
+                        points=points,
+                        action_label=f"Quiz · {question.text[:60]}",
+                    )
+                    participant.points = (participant.points or 0) + points
+                    participant.save(update_fields=["points"])
+            logger.info(
+                "quiz_response_scored",
+                question_id=str(question_id), participant_id=str(participant.pk),
+                answer=answer_index, is_correct=is_correct, points=points,
+            )
+        except Exception as e:  # pragma: no cover - defensive
             logger.error("quiz_response_save_failed", error=str(e))
+
+    @staticmethod
+    def _coerce_index(value):
+        """Parse a 0-based option index from a client payload, or None if invalid."""
+        try:
+            idx = int(value)
+            return idx if idx >= 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _correct_index(question):
+        """The 0-based index of the correct option (from options or correct_answer)."""
+        for i, opt in enumerate(question.options or []):
+            if isinstance(opt, dict) and opt.get("is_correct"):
+                return i
+        try:
+            return int(question.correct_answer)
+        except (TypeError, ValueError):
+            return None
+
+    def _current_correct_streak(self, participant, question) -> int:
+        """Count the participant's trailing run of correct answers before this question."""
+        from apps.gamification.models import QuizResponse
+        prior = (
+            QuizResponse.objects
+            .filter(participant=participant, question__session_id=self.session_id)
+            .exclude(question_id=question.pk)
+            .order_by("-question__launched_at", "-answered_at")
+            .values_list("is_correct", flat=True)
+        )
+        streak = 0
+        for correct in prior:
+            if correct:
+                streak += 1
+            else:
+                break
+        return streak
+
+    @database_sync_to_async
+    def _build_reveal_payload(self, question_id: str):
+        from apps.gamification.models import QuizQuestion, QuizResponse
+        try:
+            question = QuizQuestion.objects.get(pk=question_id, session_id=self.session_id)
+        except QuizQuestion.DoesNotExist:
+            return None
+
+        if not question.closed_at:
+            question.closed_at = timezone.now()
+            question.save(update_fields=["closed_at"])
+
+        correct_index = self._correct_index(question)
+        responses = list(
+            QuizResponse.objects.filter(question=question).select_related("participant")
+        )
+        counts: dict = {}
+        results = []
+        for r in responses:
+            key = str(r.answer)
+            counts[key] = counts.get(key, 0) + 1
+            results.append({
+                "participant_id": str(r.participant.pk),
+                "display_name": r.participant.display_name,
+                "answer_index": r.answer,
+                "is_correct": bool(r.is_correct),
+                "points_awarded": r.points_awarded,
+                "response_time_ms": r.response_time_ms,
+            })
+
+        correct_text = ""
+        if correct_index is not None and correct_index < len(question.options or []):
+            correct_text = (question.options[correct_index] or {}).get("text", "")
+
+        return {
+            "question_id": str(question.pk),
+            "correct_index": correct_index,
+            "correct_text": correct_text,
+            "explanation": question.explanation,
+            "counts": counts,
+            "total_responses": len(results),
+            "results": results,
+            "leaderboard": self._leaderboard(),
+        }
+
+    @database_sync_to_async
+    def _build_final_ranking(self):
+        return self._leaderboard()
+
+    def _leaderboard(self):
+        """Full session ranking (sync helper; call from a DB-safe context)."""
+        from apps.live_sessions.models import LiveSession, Participant
+        try:
+            instructor_id = LiveSession.objects.values_list(
+                "instructor_id", flat=True
+            ).get(pk=self.session_id)
+        except LiveSession.DoesNotExist:
+            instructor_id = None
+        participants = (
+            Participant.objects
+            .filter(session_id=self.session_id)
+            .exclude(user_id=instructor_id)
+            .order_by("-points", "display_name")
+        )
+        return [
+            {
+                "participant_id": str(p.pk),
+                "student_id": str(p.user_id) if p.user_id else None,
+                "display_name": p.display_name,
+                "points": p.points or 0,
+                "rank": i + 1,
+            }
+            for i, p in enumerate(participants)
+        ]
 
     @database_sync_to_async
     def _get_quiz_results(self, question_id: str) -> dict:
