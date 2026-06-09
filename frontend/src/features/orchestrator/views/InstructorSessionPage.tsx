@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Zap, Users, MessageCircle, FolderOpen,
   Timer, Dices, Trophy, Wifi, WifiOff, Square, Play, Pause, Plus, Trash2,
-  Copy, Link, UserPlus,
+  Copy, Link, UserPlus, Youtube,
   PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen
 } from 'lucide-react';
 
@@ -41,6 +41,7 @@ import { cn } from '@/shared/lib/utils';
 import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import PDFStage from '@/features/presentations/components/PDFStage';
+import VideoStage from '@/features/presentations/components/VideoStage';
 
 // Features — Branch 'main' (Gamificación y Quizzes)
 import RouletteWheel from '@/features/gamification/components/RouletteWheel';
@@ -58,6 +59,7 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
   PRESENTATION: FolderOpen,
   QUIZ: Trophy,
   GAME: Trophy,
+  VIDEO: Youtube,
   BREAK: Timer,
 };
 
@@ -83,6 +85,7 @@ export default function InstructorSessionPage() {
   const [newStageTitle, setNewStageTitle] = useState('');
   const [newStageType, setNewStageType] = useState('BOARD');
   const [newStageDuration, setNewStageDuration] = useState('10');
+  const [newStageVideoUrl, setNewStageVideoUrl] = useState('');
   const [isCreatingStage, setIsCreatingStage] = useState(false);
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -131,6 +134,7 @@ export default function InstructorSessionPage() {
     { type: 'BOARD', label: 'Pizarra', description: 'Lienzo digital interactivo colaborativo.', icon: Zap, badge: { text: 'Listo', tone: 'bg-green-500/20 text-green-600 dark:text-green-400' } },
     { type: 'PDF', label: 'Documentos', description: 'PDF, PowerPoint, Word, Excel y texto compartidos.', icon: FolderOpen, badge: { text: 'PDF', tone: 'bg-primary/20 text-primary' } },
     { type: 'QUIZ', label: 'Quiz', description: 'Cuestionarios interactivos estilo Kahoot.', icon: Trophy, badge: { text: 'Listo', tone: 'bg-green-500/20 text-green-600 dark:text-green-400' } },
+    { type: 'VIDEO', label: 'Video', description: 'YouTube sincronizado: tú controlas, todos siguen.', icon: Youtube, badge: { text: 'Listo', tone: 'bg-green-500/20 text-green-600 dark:text-green-400' } },
   ] as const;
 
   const handleSpinner = () => setIsRouletteOpen(true);
@@ -162,6 +166,7 @@ export default function InstructorSessionPage() {
         type: s.stage_type,
         duration: s.duration_estimated_minutes,
         completed: false,
+        config: s.config ?? {},
       }));
 
       let mappedParticipants: any[] = [];
@@ -289,6 +294,15 @@ export default function InstructorSessionPage() {
       return;
     }
 
+    if (newStageType === 'VIDEO' && !newStageVideoUrl.trim()) {
+      toast({
+        title: 'URL requerida',
+        description: 'Pega el enlace del video (YouTube, Vimeo o un archivo de video) para esta escena.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsCreatingStage(true);
     try {
       // The uploaded file decides the viewer: PPTX → presentation stage,
@@ -307,6 +321,10 @@ export default function InstructorSessionPage() {
 
       if (newStageType === 'QUIZ' && selectedQuizId) {
         payload.config = { quiz_id: selectedQuizId };
+      }
+
+      if (newStageType === 'VIDEO') {
+        payload.config = { youtube_url: newStageVideoUrl.trim() };
       }
 
       // Stages belong to the session itself (not the template).
@@ -341,6 +359,7 @@ export default function InstructorSessionPage() {
       setNewStageTitle('');
       setNewStageType('BOARD');
       setNewStageDuration('10');
+      setNewStageVideoUrl('');
       setPptFile(null);
     } catch (err) {
       console.error('Failed to create stage:', err);
@@ -739,6 +758,8 @@ export default function InstructorSessionPage() {
               <CollaborativePresentationStage key={activeStage.id} sessionId={id ?? ''} role="instructor" sendMessage={sendMessage} />
             ) : activeStage.type === 'PDF' ? (
               <PDFStage key={activeStage.id} sessionId={id ?? ''} role="instructor" activeStageId={activeStage.id} currentPage={currentPdfPage} onPageChange={handlePdfPageChange} />
+            ) : activeStage.type === 'VIDEO' ? (
+              <VideoStage key={activeStage.id} url={activeStage.config?.youtube_url ?? activeStage.config?.url ?? ''} role="instructor" stageId={activeStage.id} sendMessage={sendMessage} />
             ) : activeStage.type === 'QUIZ' || activeStage.type === 'GAME' ? (
               <InstructorQuizFlow
                 key={activeStage.id}
@@ -1283,6 +1304,22 @@ export default function InstructorSessionPage() {
                   </select>
                   <p className="text-[10px] text-muted-foreground">
                     Si seleccionas un quiz, se copiarán sus preguntas para esta escena.
+                  </p>
+                </div>
+              )}
+
+              {newStageType === 'VIDEO' && (
+                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3 animate-fade-in">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Enlace del video
+                  </label>
+                  <Input
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    value={newStageVideoUrl}
+                    onChange={(e) => setNewStageVideoUrl(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    YouTube se reproduce sincronizado (tú controlas, los estudiantes siguen). También admite Vimeo o un enlace directo a un archivo de video.
                   </p>
                 </div>
               )}

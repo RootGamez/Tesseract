@@ -123,7 +123,7 @@ export function useWebSocket(
     console.log(`[WS Event] [${channel}]`, event, payload);
     const a = actionsRef.current;
 
-    const upsertStage = (stageId: string, stageType: string, stageTitle?: string) => {
+    const upsertStage = (stageId: string, stageType: string, stageTitle?: string, config?: Record<string, any>) => {
       const store = useOrchestratorStore.getState();
       const exists = store.stages.some((stage) => stage.id === stageId);
       if (exists) return;
@@ -136,6 +136,7 @@ export function useWebSocket(
           type: stageType,
           duration: 10,
           completed: false,
+          config: config ?? {},
         },
       ];
 
@@ -157,6 +158,7 @@ export function useWebSocket(
           const mappedStages = payload.stages.map((s: any) => ({
             id: s.id, title: s.title, type: s.stage_type,
             duration: s.duration_estimated_minutes, completed: false,
+            config: s.config ?? {},
           }));
           a.syncOrchestrator({
             stages: mappedStages,
@@ -174,7 +176,7 @@ export function useWebSocket(
         // Instructor-driven scene switch — ignored in replay (no live instructor).
         if (modeRef.current !== 'live') break;
         a.setSceneState({ activeScene: payload.type, stageData: payload.data });
-        upsertStage(payload.stage_id, payload.type, payload.data?.title);
+        upsertStage(payload.stage_id, payload.type, payload.data?.title, payload.data);
         useOrchestratorStore.getState().setActiveStage(payload.stage_id);
         break;
 
@@ -347,6 +349,9 @@ export function useWebSocket(
         break;
       case 'PDF_PAGE_CHANGED':
         window.dispatchEvent(new CustomEvent('pdf-page-changed', { detail: payload }));
+        break;
+      case 'VIDEO_STATE':
+        window.dispatchEvent(new CustomEvent('video-state', { detail: payload }));
         break;
       default:
         break;

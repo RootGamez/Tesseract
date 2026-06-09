@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from core.websocket_events import (
     SESSION_STATE, STAGE_CHANGED, PARTICIPANT_JOINED, PARTICIPANT_LEFT,
-    PARTICIPANT_STATUS, WS_ERROR,
+    PARTICIPANT_STATUS, WS_ERROR, VIDEO_STATE,
 )
 from core.throttling import WebSocketMessageThrottle
 
@@ -113,6 +113,28 @@ class SessionConsumer(AsyncWebsocketConsumer):
         if event_type == "PING":
             await self.send(text_data=json.dumps({"event": "PONG"}))
 
+        elif event_type == "VIDEO_STATE":
+            # Sincronización de video: solo el instructor controla; el resto sigue.
+            if not await self._is_instructor():
+                return
+            payload = data.get("payload", {})
+            await self.channel_layer.group_send(
+                self.session_group,
+                {
+                    "type": "video.state",
+                    "event": VIDEO_STATE,
+                    "payload": {
+                        "stage_id": payload.get("stage_id", ""),
+                        "video_id": payload.get("video_id", ""),
+                        "status": payload.get("status", "paused"),
+                        "time": float(payload.get("time", 0) or 0),
+                        "rate": float(payload.get("rate", 1) or 1),
+                        "ts": payload.get("ts", 0),
+                    },
+                    "sender_channel": self.channel_name,
+                },
+            )
+
     # ── Group message handlers ─────────────────────────────────────────────────
 
     async def session_state_changed(self, event):
@@ -139,7 +161,24 @@ class SessionConsumer(AsyncWebsocketConsumer):
             "payload": event["payload"],
         }))
 
+    async def video_state(self, event):
+        # No reenviar al emisor (el instructor ya controla su propio reproductor).
+        if event.get("sender_channel") != self.channel_name:
+            await self.send(text_data=json.dumps({
+                "event": event["event"],
+                "payload": event["payload"],
+            }))
+
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    @database_sync_to_async
+    def _is_instructor(self) -> bool:
+        from apps.live_sessions.models import LiveSession
+        try:
+            session = LiveSession.objects.get(pk=self.session_id)
+            return session.instructor_id == self.user.id
+        except Exception:
+            return False
 
     async def send_session_state(self, session):
         """Send complete current session state on connect (resync)."""

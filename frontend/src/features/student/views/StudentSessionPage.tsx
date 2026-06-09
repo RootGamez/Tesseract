@@ -15,6 +15,7 @@ import BoardWrapper from '@/features/board/components/BoardWrapper';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import PDFStage from '@/features/presentations/components/PDFStage';
+import VideoStage from '@/features/presentations/components/VideoStage';
 import StudentQuizView from '@/features/quiz/components/StudentQuizView';
 import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import TimerWidget from '@/features/gamification/components/TimerWidget';
@@ -24,7 +25,7 @@ const EMOJIS = ['👍', '❤️', '😂', '😮', '🔥', '👏', '🚀', '💡'
 export default function StudentSessionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { activeScene, points, pointAnimation, clearPointAnimation, rouletteState, timerData } = useSceneStore();
+  const { activeScene, stageData, points, pointAnimation, clearPointAnimation, rouletteState, timerData } = useSceneStore();
   const { messages, floatingBubbles, isDrawerOpen, setDrawerOpen, isSilenced } = useChatStore();
   const { user } = useAuthStore();
   const { sendMessage } = useWebSocket(id ?? null, 'student');
@@ -85,6 +86,8 @@ export default function StudentSessionPage() {
             <CollaborativePresentationStage key={activeStageId} sessionId={id ?? ''} role="student" sendMessage={sendMessage} />
           ) : activeScene === 'PDF' ? (
             <PDFStage key={activeStageId} sessionId={id ?? ''} role="student" activeStageId={activeStageId} />
+          ) : activeScene === 'VIDEO' ? (
+            <VideoStage key={activeStageId} url={stageData?.youtube_url ?? stageData?.url ?? ''} role="student" stageId={activeStageId} sendMessage={sendMessage} />
           ) : activeScene === 'QUIZ' ? (
             <StudentQuizView key={activeStageId} sessionId={id ?? ''} stageId={activeStageId} sendMessage={sendMessage} />
           ) : (

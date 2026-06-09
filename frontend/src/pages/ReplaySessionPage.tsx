@@ -14,6 +14,7 @@ import { useOrchestratorStore } from '@/features/orchestrator/store/orchestrator
 import BoardWrapper from '@/features/board/components/BoardWrapper';
 import PDFStage from '@/features/presentations/components/PDFStage';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
+import VideoStage, { parseVideoSource } from '@/features/presentations/components/VideoStage';
 import QuizReview from '@/features/quiz/components/QuizReview';
 
 interface ReplayStage {
@@ -40,17 +41,9 @@ function stageMeta(type: string) {
   return STAGE_META[type] ?? { label: type, icon: Sparkles };
 }
 
-/** Extracts an embeddable video URL from a VIDEO stage config, if present. */
-function videoEmbed(config?: Record<string, any>): { url: string; isIframe: boolean } | null {
-  const raw = config?.url || config?.video_url || config?.src || config?.youtube_url;
-  if (!raw || typeof raw !== 'string') return null;
-  const yt = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]+)/);
-  if (yt) return { url: `https://www.youtube.com/embed/${yt[1]}`, isIframe: true };
-  if (raw.includes('vimeo.com')) {
-    const id = raw.split('/').pop();
-    return { url: `https://player.vimeo.com/video/${id}`, isIframe: true };
-  }
-  return { url: raw, isIframe: false };
+/** Reads the configured video URL from a VIDEO stage config, if present. */
+function videoUrl(config?: Record<string, any>): string {
+  return config?.youtube_url || config?.url || config?.video_url || config?.src || '';
 }
 
 export default function ReplaySessionPage() {
@@ -121,17 +114,10 @@ export default function ReplaySessionPage() {
       case 'GAME':
         return <QuizReview key={activeStage.id} sessionId={id} stageId={activeStage.id} />;
       case 'VIDEO': {
-        const embed = videoEmbed(activeStage.config);
-        if (!embed) return <StagePlaceholder stage={activeStage} note="No se adjuntó ningún video a esta etapa." />;
-        return (
-          <div className="w-full h-full bg-black flex items-center justify-center p-4">
-            {embed.isIframe ? (
-              <iframe src={embed.url} title={activeStage.title} className="w-full h-full max-w-5xl rounded-xl" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
-            ) : (
-              <video src={embed.url} controls className="max-w-full max-h-full rounded-xl" />
-            )}
-          </div>
-        );
+        const url = videoUrl(activeStage.config);
+        if (!parseVideoSource(url)) return <StagePlaceholder stage={activeStage} note="No se adjuntó ningún video a esta etapa." />;
+        // reviewMode: controles libres, sin sincronización (repaso self-paced).
+        return <VideoStage key={activeStage.id} url={url} role="student" stageId={activeStage.id} reviewMode />;
       }
       default:
         return <StagePlaceholder stage={activeStage} />;

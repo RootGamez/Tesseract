@@ -6,6 +6,8 @@ export interface Stage {
   type: string;
   duration: number;
   completed: boolean;
+  /** Per-stage config (e.g. VIDEO: { youtube_url }, QUIZ: { quiz_id }). */
+  config?: Record<string, any>;
 }
 
 export interface Participant {

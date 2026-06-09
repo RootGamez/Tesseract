@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, Zap, FolderOpen, Timer, Trophy, Plus, Trash2, ArrowUp, ArrowDown,
-  Save, Play, CheckCircle2, AlertCircle, Loader2, Info, List, SlidersHorizontal
+  Save, Play, CheckCircle2, AlertCircle, Loader2, Info, List, SlidersHorizontal, Youtube
 } from 'lucide-react';
 
 import { Button } from '@/shared/components/ui/button';
@@ -29,6 +29,7 @@ import apiClient from '@/shared/services/apiClient';
 // Builder stage components
 import BoardWrapper, { type BoardWrapperHandle } from '@/features/board/components/BoardWrapper';
 import PDFStage from '@/features/presentations/components/PDFStage';
+import VideoStage, { parseVideoSource } from '@/features/presentations/components/VideoStage';
 import { useOrchestratorStore } from '@/features/orchestrator/store/orchestratorStore';
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
@@ -37,6 +38,7 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
   PRESENTATION: FolderOpen,
   QUIZ: Trophy,
   GAME: Trophy,
+  VIDEO: Youtube,
   BREAK: Timer,
 };
 
@@ -66,6 +68,7 @@ export default function TemplateBuilderPage() {
   const [newStageDuration, setNewStageDuration] = useState('10');
   const [newStageFile, setNewStageFile] = useState<File | null>(null);
   const [newStageQuizId, setNewStageQuizId] = useState('');
+  const [newStageVideoUrl, setNewStageVideoUrl] = useState('');
   const [addingStage, setAddingStage] = useState(false);
 
   // Mobile drawers
@@ -287,6 +290,7 @@ export default function TemplateBuilderPage() {
     setNewStageDuration('10');
     setNewStageFile(null);
     setNewStageQuizId('');
+    setNewStageVideoUrl('');
   };
 
   // Add new stage (mirrors the live-class "add scene" flow)
@@ -302,11 +306,21 @@ export default function TemplateBuilderPage() {
       return;
     }
 
+    if (newStageType === 'VIDEO' && !newStageVideoUrl.trim()) {
+      toast({
+        title: 'URL requerida',
+        description: 'Pega el enlace del video (YouTube, Vimeo o un archivo) para esta escena.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setAddingStage(true);
     try {
       const config: Record<string, unknown> = {};
       if (newStageType === 'QUIZ' && newStageQuizId) config.quiz_id = newStageQuizId;
       if ((newStageType === 'PDF' || newStageType === 'PRESENTATION') && newStageFile) config.filename = newStageFile.name;
+      if (newStageType === 'VIDEO') config.youtube_url = newStageVideoUrl.trim();
 
       const payload = {
         title: newStageTitle.trim(),
@@ -432,6 +446,14 @@ export default function TemplateBuilderPage() {
       }
       return s;
     }));
+  };
+
+  // Set (or clear) the video URL on the active stage config
+  const handleSetVideoUrl = (url: string) => {
+    if (!activeStageId) return;
+    setStages(current => current.map(s =>
+      s.id === activeStageId ? { ...s, config: { ...s.config, youtube_url: url } } : s
+    ));
   };
 
   // Persists current template metadata + all stage configs to the backend
@@ -837,6 +859,39 @@ export default function TemplateBuilderPage() {
                   </div>
                 )}
               </div>
+            ) : activeStage.stage_type === 'VIDEO' ? (
+              <div className="w-full h-full flex flex-col" key={activeStage.id}>
+                <div className="p-3 border-b border-border bg-card/40 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
+                    Enlace del video
+                  </span>
+                  <Input
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    value={(activeStage.config as any)?.youtube_url ?? ''}
+                    onChange={(e) => handleSetVideoUrl(e.target.value)}
+                    className="flex-1"
+                  />
+                </div>
+                <div className="flex-1 min-h-0">
+                  {parseVideoSource((activeStage.config as any)?.youtube_url) ? (
+                    // reviewMode: previsualización con controles libres en el constructor.
+                    <VideoStage
+                      key={(activeStage.config as any)?.youtube_url}
+                      url={(activeStage.config as any)?.youtube_url}
+                      role="instructor"
+                      stageId={activeStage.id!}
+                      reviewMode
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center gap-3 p-6">
+                      <Youtube className="w-12 h-12 text-muted-foreground/60" />
+                      <p className="text-xs text-muted-foreground max-w-xs">
+                        Pega un enlace de YouTube (se reproducirá sincronizado en clase), Vimeo o un archivo de video para previsualizarlo aquí.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
               <motion.div
                 key={activeStageId}
@@ -1000,7 +1055,41 @@ export default function TemplateBuilderPage() {
                   <p className="text-[11px] leading-snug text-muted-foreground">Cuestionarios interactivos estilo Kahoot.</p>
                   <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-600 dark:text-green-400 border-0 text-[9px] px-1.5 py-0">Listo</Badge>
                 </div>
+
+                {/* VIDEO */}
+                <div
+                  onClick={() => setNewStageType('VIDEO')}
+                  className={cn(
+                    'p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-2 relative overflow-hidden',
+                    newStageType === 'VIDEO' ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/50'
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', newStageType === 'VIDEO' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                      <Youtube className="w-4 h-4" />
+                    </div>
+                    <span className="font-semibold text-sm text-foreground">Video</span>
+                  </div>
+                  <p className="text-[11px] leading-snug text-muted-foreground">YouTube sincronizado: tú controlas, todos siguen.</p>
+                  <Badge className="absolute top-2 right-2 bg-green-500/20 text-green-600 dark:text-green-400 border-0 text-[9px] px-1.5 py-0">Listo</Badge>
+                </div>
               </div>
+
+              {newStageType === 'VIDEO' && (
+                <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 mt-3 animate-fade-in">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Enlace del video
+                  </label>
+                  <Input
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    value={newStageVideoUrl}
+                    onChange={(e) => setNewStageVideoUrl(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    YouTube se reproduce sincronizado en clase. También admite Vimeo o un enlace directo a un archivo de video.
+                  </p>
+                </div>
+              )}
 
               {(newStageType === 'PDF' || newStageType === 'PRESENTATION') && (
                 <div className="mt-3">

@@ -9,7 +9,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 
-from core.websocket_events import WS_ERROR, PDF_PAGE_CHANGED
+from core.websocket_events import WS_ERROR, PDF_PAGE_CHANGED, VIDEO_STATE
 from core.throttling import WebSocketMessageThrottle
 
 logger = structlog.get_logger(__name__)
@@ -87,6 +87,28 @@ class PresentationConsumer(AsyncWebsocketConsumer):
                 },
             )
 
+        elif event_type == "VIDEO_STATE":
+            # Solo el instructor controla la reproducción; los estudiantes la siguen.
+            if not await self._is_instructor():
+                await self.send(text_data=json.dumps({"event": WS_ERROR, "payload": {"message": "Acción no autorizada."}}))
+                return
+            await self.channel_layer.group_send(
+                self.presentation_group,
+                {
+                    "type": "video.state",
+                    "event": VIDEO_STATE,
+                    "payload": {
+                        "stage_id": payload.get("stage_id", ""),
+                        "video_id": payload.get("video_id", ""),
+                        "status": payload.get("status", "paused"),  # 'playing' | 'paused'
+                        "time": float(payload.get("time", 0) or 0),  # segundos de reproducción
+                        "rate": float(payload.get("rate", 1) or 1),
+                        "ts": payload.get("ts", 0),  # reloj del emisor (ms) para corregir deriva
+                    },
+                    "sender_channel": self.channel_name,
+                },
+            )
+
         elif event_type == "REQUEST_PRESENTATION_SYNC":
             await self._send_current_state()
 
@@ -101,6 +123,11 @@ class PresentationConsumer(AsyncWebsocketConsumer):
 
     async def pdf_page_changed(self, event):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def video_state(self, event):
+        # No reenviar al emisor (el instructor ya controla su propio reproductor).
+        if event.get("sender_channel") != self.channel_name:
+            await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     @database_sync_to_async
     def _get_session(self):
