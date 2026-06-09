@@ -5,7 +5,7 @@ import uuid
 import os
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
-from rest_framework import generics, status
+from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -251,6 +251,136 @@ class TemplateResourceUploadView(APIView):
             return Response({"error": {"message": str(e)}}, status=500)
 
         return Response(ResourceSerializer(resource).data, status=status.HTTP_201_CREATED)
+
+
+# ── Entregables (RF-SUBMISSION) ─────────────────────────────────────────────────
+#
+# A "submission" is a regular Resource attached to a SUBMISSION-type Stage and
+# owned by the student who uploaded it (``uploaded_by``). Office/text/ppt files
+# are rendered to PDF (``converted_pdf_key``) so the instructor can project any
+# submission through the same PDF viewer as the rest of the platform.
+
+
+def _get_submission_stage(session_id, stage_id, user):
+    """
+    Resolve a SUBMISSION stage and the membership of ``user`` in its session.
+    Returns (stage, session, is_instructor) or raises a ready-to-return Response
+    via the sentinel tuple (None, error_response).
+    """
+    from apps.live_sessions.models import LiveSession, Stage
+
+    try:
+        session = LiveSession.objects.get(pk=session_id)
+    except LiveSession.DoesNotExist:
+        return None, Response({"error": {"message": "Sesión no encontrada."}}, status=status.HTTP_404_NOT_FOUND)
+
+    stage = Stage.objects.filter(pk=stage_id, session=session, stage_type="SUBMISSION").first()
+    if stage is None:
+        return None, Response({"error": {"message": "Escena de entregables no encontrada."}}, status=status.HTTP_404_NOT_FOUND)
+
+    is_instructor = session.instructor_id == user.id
+    is_participant = session.participants.filter(user=user).exists()
+    if not (is_instructor or is_participant):
+        return None, Response({"detail": "No autorizado."}, status=status.HTTP_403_FORBIDDEN)
+
+    return (stage, session, is_instructor), None
+
+
+class SubmissionView(APIView):
+    """
+    GET/POST /api/v1/resources/sessions/<session_id>/stages/<stage_id>/submissions/
+
+    GET  — instructor sees every submission; a student sees only their own.
+    POST — a student (or the instructor) uploads/replaces a submission file.
+
+    Membership is enforced explicitly in `_get_submission_stage`; IsAuthenticated
+    guarantees a real user before that check runs.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def get(self, request, session_id, stage_id):
+        resolved, error = _get_submission_stage(session_id, stage_id, request.user)
+        if error:
+            return error
+        stage, _session, is_instructor = resolved
+
+        qs = Resource.objects.filter(stage=stage).select_related("uploaded_by").order_by("created_at")
+        if not is_instructor:
+            qs = qs.filter(uploaded_by=request.user)
+        return Response(ResourceSerializer(qs, many=True).data)
+
+    def post(self, request, session_id, stage_id):
+        resolved, error = _get_submission_stage(session_id, stage_id, request.user)
+        if error:
+            return error
+        stage, session, _is_instructor = resolved
+
+        serializer = ResourceUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        error = _validate_upload(serializer)
+        if error:
+            return error
+
+        uploaded_file = serializer.validated_data["file"]
+        resource_type = serializer.validated_data["resource_type"]
+        object_key = f"sessions/{session_id}/submissions/{uuid.uuid4()}{os.path.splitext(uploaded_file.name)[1]}"
+
+        try:
+            upload_file(uploaded_file, object_key, uploaded_file.content_type or "application/octet-stream")
+
+            # One submission per student per stage: replace the previous file.
+            Resource.objects.filter(stage=stage, uploaded_by=request.user).delete()
+
+            resource = Resource.objects.create(
+                session=session,
+                stage=stage,
+                uploaded_by=request.user,
+                name=uploaded_file.name,
+                resource_type=resource_type,
+                file_key=object_key,
+                size_bytes=uploaded_file.size,
+                content_type=uploaded_file.content_type,
+                presigned_url=generate_presigned_url(object_key),
+                is_uploaded=True,
+                is_dry_run_temp=session.is_dry_run,
+            )
+
+            # Render office/text/PPT submissions to PDF so they can be projected in
+            # the shared PDF viewer (PDFs are already viewable as-is). We deliberately
+            # do NOT build a collaborative slide deck for PPT submissions.
+            if resource_type in ("DOCUMENT", "PRESENTATION"):
+                from apps.resources.tasks import convert_document_to_pdf
+                convert_document_to_pdf.delay(str(resource.pk))
+        except Exception as e:
+            Resource.objects.filter(stage=stage, file_key=object_key).delete()
+            return Response({"error": {"message": str(e)}}, status=500)
+
+        return Response(ResourceSerializer(resource).data, status=status.HTTP_201_CREATED)
+
+
+class SubmissionDeleteView(APIView):
+    """
+    DELETE /api/v1/resources/sessions/<session_id>/submissions/<resource_id>/
+
+    A student may remove their own submission; the instructor may remove any.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, session_id, resource_id):
+        resource = Resource.objects.select_related("session", "stage").filter(
+            pk=resource_id, session_id=session_id
+        ).first()
+        if resource is None or resource.session is None:
+            return Response({"detail": "Entregable no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        is_instructor = resource.session.instructor_id == request.user.id
+        if not (is_instructor or resource.uploaded_by_id == request.user.id):
+            return Response({"detail": "No autorizado."}, status=status.HTTP_403_FORBIDDEN)
+
+        resource.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class SnippetListCreateView(generics.ListCreateAPIView):

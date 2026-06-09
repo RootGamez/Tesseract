@@ -13,6 +13,7 @@ SLIDE_CHANGED = "slide.change"
 CANVAS_DRAW = "canvas.draw"
 PDF_PAGE_CHANGED = "PDF_PAGE_CHANGED"
 VIDEO_STATE = "VIDEO_STATE"  # instructor → estudiantes: play/pausa/seek de video sincronizado
+SUBMISSION_PRESENT = "SUBMISSION_PRESENT"  # instructor → estudiantes: entregable que se proyecta (o null)
 
 # ── Pizarra colaborativa ──────────────────────────────────────────────────────
 BOARD_UPDATE = "BOARD_UPDATE"   # (legacy) snapshot completo

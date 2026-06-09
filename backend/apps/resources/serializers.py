@@ -6,7 +6,8 @@ from .models import Resource, Snippet
 class ResourceSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source="uploaded_by.display_name", read_only=True)
     presigned_url = serializers.SerializerMethodField()
-    # True once a DOCUMENT has been rendered to PDF (always True for non-documents).
+    # True once a file is viewable in the PDF viewer: native PDFs are always ready;
+    # office/text/PPT files are ready once rendered to PDF (converted_pdf_key set).
     is_converted = serializers.SerializerMethodField()
 
     class Meta:
@@ -19,9 +20,11 @@ class ResourceSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "uploaded_by", "size_bytes", "is_uploaded", "created_at"]
 
     def get_is_converted(self, obj):
-        if obj.resource_type != Resource.ResourceType.DOCUMENT:
-            return True
-        return bool(obj.converted_pdf_key)
+        # DOCUMENT and PRESENTATION submissions are rendered to PDF before they can
+        # be projected; everything else is viewable (or irrelevant) as-is.
+        if obj.resource_type in (Resource.ResourceType.DOCUMENT, Resource.ResourceType.PRESENTATION):
+            return bool(obj.converted_pdf_key)
+        return True
 
     def get_presigned_url(self, obj):
         if not obj.is_uploaded:

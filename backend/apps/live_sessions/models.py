@@ -25,6 +25,7 @@ class StageType(models.TextChoices):
     CHAT_FOCUS = "CHAT_FOCUS", "Chat enfocado"
     GAME = "GAME", "Juego (Ruleta / Timer)"
     RESOURCE = "RESOURCE", "Nube de recursos"
+    SUBMISSION = "SUBMISSION", "Entregables"
     BREAK = "BREAK", "Descanso"
 
 

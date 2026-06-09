@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ChevronLeft, ChevronRight, PanelLeftClose, PanelLeftOpen,
   Presentation, FileText, MonitorPlay, Video, Trophy, Gamepad2,
-  MessageCircle, FolderOpen, Coffee, Sparkles, History,
+  MessageCircle, FolderOpen, Coffee, Sparkles, History, Inbox,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
@@ -16,6 +16,7 @@ import PDFStage from '@/features/presentations/components/PDFStage';
 import CollaborativePresentationStage from '@/features/presentations/components/CollaborativePresentationStage';
 import VideoStage, { parseVideoSource } from '@/features/presentations/components/VideoStage';
 import QuizReview from '@/features/quiz/components/QuizReview';
+import SubmissionStage from '@/features/submissions/components/SubmissionStage';
 
 interface ReplayStage {
   id: string;
@@ -32,6 +33,7 @@ const STAGE_META: Record<string, { label: string; icon: typeof Presentation }> =
   VIDEO: { label: 'Video', icon: Video },
   QUIZ: { label: 'Quiz', icon: Trophy },
   GAME: { label: 'Juego', icon: Gamepad2 },
+  SUBMISSION: { label: 'Entregables', icon: Inbox },
   CHAT_FOCUS: { label: 'Chat', icon: MessageCircle },
   RESOURCE: { label: 'Recursos', icon: FolderOpen },
   BREAK: { label: 'Descanso', icon: Coffee },
@@ -113,6 +115,8 @@ export default function ReplaySessionPage() {
       case 'QUIZ':
       case 'GAME':
         return <QuizReview key={activeStage.id} sessionId={id} stageId={activeStage.id} />;
+      case 'SUBMISSION':
+        return <SubmissionStage key={activeStage.id} sessionId={id} stageId={activeStage.id} role="student" config={activeStage.config} reviewMode />;
       case 'VIDEO': {
         const url = videoUrl(activeStage.config);
         if (!parseVideoSource(url)) return <StagePlaceholder stage={activeStage} note="No se adjuntó ningún video a esta etapa." />;

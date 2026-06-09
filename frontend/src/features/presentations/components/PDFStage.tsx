@@ -14,6 +14,13 @@ interface PDFStageProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   localFileUrl?: string;
+  /**
+   * Render one specific resource (e.g. a projected submission) instead of
+   * resolving the document from the stage. Takes precedence over activeStageId.
+   */
+  resourceId?: string;
+  /** When loading `resourceId`, fetch the PDF rendered from an office/PPT file. */
+  documentVariant?: boolean;
   /** Self-paced review of a finished class: hide the "go to teacher's page" sync UI. */
   reviewMode?: boolean;
 }
@@ -22,7 +29,7 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 8;
 const ZOOM_STEP = 1.15;
 
-export default function PDFStage({ sessionId, role, activeStageId, currentPage: controlledPage, onPageChange, localFileUrl, reviewMode = false }: PDFStageProps) {
+export default function PDFStage({ sessionId, role, activeStageId, currentPage: controlledPage, onPageChange, localFileUrl, resourceId, documentVariant = false, reviewMode = false }: PDFStageProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
@@ -120,6 +127,16 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
     setPageCount(0);
     pdfRef.current = null;
 
+    // Direct mode: render one specific resource (e.g. a projected submission).
+    if (resourceId) {
+      const url = `/api/v1/resources/${resourceId}/download/${documentVariant ? '?variant=pdf' : ''}`;
+      apiClient.get(url, { responseType: 'blob' })
+        .then(dl => { if (alive) { setPdfUrl(URL.createObjectURL(dl.data as Blob)); setErrorMessage(null); } })
+        .catch(() => { if (alive) setErrorMessage('No se pudo cargar el entregable.'); })
+        .finally(() => { if (alive) setIsLoading(false); });
+      return () => { alive = false; };
+    }
+
     // Both native PDFs and documents rendered to PDF are shown here.
     const isViewable = (r: any) => r.resource_type === 'PDF' || r.resource_type === 'DOCUMENT';
 
@@ -157,7 +174,7 @@ export default function PDFStage({ sessionId, role, activeStageId, currentPage: 
     load();
 
     return () => { alive = false; if (retryTimer) clearTimeout(retryTimer); };
-  }, [sessionId, activeStageId, localFileUrl]);
+  }, [sessionId, activeStageId, localFileUrl, resourceId, documentVariant]);
 
   // ── Init PDF document ────────────────────────────────────────────────────────
   useEffect(() => {

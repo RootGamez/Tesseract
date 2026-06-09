@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type SceneType = 'BOARD' | 'PDF' | 'PRESENTATION' | 'VIDEO' | 'QUIZ' | 'GAME' | 'BREAK';
+export type SceneType = 'BOARD' | 'PDF' | 'PRESENTATION' | 'VIDEO' | 'QUIZ' | 'GAME' | 'SUBMISSION' | 'BREAK';
 
 export interface SceneState {
   activeScene: SceneType;

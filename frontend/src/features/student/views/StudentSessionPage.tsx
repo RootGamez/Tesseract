@@ -17,6 +17,7 @@ import CollaborativePresentationStage from '@/features/presentations/components/
 import PDFStage from '@/features/presentations/components/PDFStage';
 import VideoStage from '@/features/presentations/components/VideoStage';
 import StudentQuizView from '@/features/quiz/components/StudentQuizView';
+import SubmissionStage from '@/features/submissions/components/SubmissionStage';
 import RouletteWheel from '@/features/gamification/components/RouletteWheel';
 import TimerWidget from '@/features/gamification/components/TimerWidget';
 
@@ -90,6 +91,8 @@ export default function StudentSessionPage() {
             <VideoStage key={activeStageId} url={stageData?.youtube_url ?? stageData?.url ?? ''} role="student" stageId={activeStageId} sendMessage={sendMessage} />
           ) : activeScene === 'QUIZ' ? (
             <StudentQuizView key={activeStageId} sessionId={id ?? ''} stageId={activeStageId} sendMessage={sendMessage} />
+          ) : activeScene === 'SUBMISSION' ? (
+            <SubmissionStage key={activeStageId} sessionId={id ?? ''} stageId={activeStageId} role="student" config={stageData} sendMessage={sendMessage} />
           ) : (
             <motion.div
               key={activeScene}

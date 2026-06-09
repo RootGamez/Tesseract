@@ -9,7 +9,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 
-from core.websocket_events import WS_ERROR, PDF_PAGE_CHANGED, VIDEO_STATE
+from core.websocket_events import WS_ERROR, PDF_PAGE_CHANGED, VIDEO_STATE, SUBMISSION_PRESENT
 from core.throttling import WebSocketMessageThrottle
 
 logger = structlog.get_logger(__name__)
@@ -87,6 +87,25 @@ class PresentationConsumer(AsyncWebsocketConsumer):
                 },
             )
 
+        elif event_type == "SUBMISSION_PRESENT":
+            # Entregables: el instructor elige qué archivo se proyecta (o deja de
+            # proyectar). Los estudiantes lo siguen; la navegación de página reusa
+            # PDF_PAGE_CHANGED. `presented` es null para cerrar la proyección.
+            if not await self._is_instructor():
+                await self.send(text_data=json.dumps({"event": WS_ERROR, "payload": {"message": "Acción no autorizada."}}))
+                return
+            await self.channel_layer.group_send(
+                self.presentation_group,
+                {
+                    "type": "submission.present",
+                    "event": SUBMISSION_PRESENT,
+                    "payload": {
+                        "stage_id": payload.get("stage_id", ""),
+                        "presented": payload.get("presented"),
+                    },
+                },
+            )
+
         elif event_type == "VIDEO_STATE":
             # Solo el instructor controla la reproducción; los estudiantes la siguen.
             if not await self._is_instructor():
@@ -122,6 +141,9 @@ class PresentationConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     async def pdf_page_changed(self, event):
+        await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
+
+    async def submission_present(self, event):
         await self.send(text_data=json.dumps({"event": event["event"], "payload": event["payload"]}))
 
     async def video_state(self, event):

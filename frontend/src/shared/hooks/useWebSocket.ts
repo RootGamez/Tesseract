@@ -353,6 +353,9 @@ export function useWebSocket(
       case 'VIDEO_STATE':
         window.dispatchEvent(new CustomEvent('video-state', { detail: payload }));
         break;
+      case 'SUBMISSION_PRESENT':
+        window.dispatchEvent(new CustomEvent('submission-present', { detail: payload }));
+        break;
       default:
         break;
     }
